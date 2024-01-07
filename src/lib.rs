@@ -1,2 +1,2 @@
 #![allow(dead_code)]
-pub mod gdsio;
+pub mod gdsdk;

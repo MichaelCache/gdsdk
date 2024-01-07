@@ -1,49 +1,7 @@
+
 use super::gds_error::*;
 use super::gds_record::Record;
-
-#[derive(Default, Debug)]
-pub struct Lib {
-    name: String,
-    units: f64, //in meter
-    precision: f64,
-    cells: Vec<Box<Cell>>,
-}
-
-impl Lib {}
-
-#[derive(Default, Debug)]
-pub struct Cell {
-    name: String,
-    polygons: Vec<Box<Polygon>>,
-    paths: Vec<Box<Path>>,
-    refs: Vec<Box<Ref>>,
-}
-
-#[derive(Default, Debug)]
-pub struct Polygon {
-    layer: i16,
-    datatype: i16,
-    pub points: Vec<(i32, i32)>,
-}
-
-#[derive(Default, Debug)]
-pub struct Path {
-    layer: i16,
-    datatype: i16,
-    width: i32,
-    end_type: i16,
-    pub points: Vec<(i32, i32)>,
-}
-
-#[derive(Default, Debug)]
-pub struct Ref {
-    ref_to: String,
-    reflection_x: bool,
-    abs_magnific: bool,
-    abs_angel: bool,
-    angle: f64, //measured in degrees and in the counterclockwise direction
-    origin: (i32, i32),
-}
+use super::gds_model::*;
 
 pub fn parse_gds(records: &[Record]) -> Result<Box<Lib>, Box<dyn Error>> {
     let mut lib: Box<Lib> = Box::new(Lib::default());
@@ -75,6 +33,7 @@ fn parse_lib(records: &[Record]) -> Result<(Box<Lib>, usize), Box<dyn Error>> {
     let mut i = 0;
     while i < rec_len {
         match &records[i] {
+            Record::BgnLib(date) => lib.date = date.clone(), //modification time of lib, and marks beginning of library
             Record::LibName(s) => lib.name = s.to_string(),
             Record::Units {
                 unit_in_meter,
@@ -98,7 +57,9 @@ fn parse_lib(records: &[Record]) -> Result<(Box<Lib>, usize), Box<dyn Error>> {
             Record::EndLib => {
                 break;
             }
-            _ => (),
+            other => {
+                println!("get record from lib {:#?}", other);
+            }
         }
         i += 1;
     }
@@ -112,6 +73,7 @@ fn parse_cell(records: &[Record]) -> Result<(Box<Cell>, usize), Box<dyn Error>> 
     let mut i = 0;
     while i < rec_len {
         match &records[i] {
+            Record::BgnStr(data) => cell.date = data.clone(), // last modification time of a structure and marks the beginning of a structure
             Record::StrName(s) => cell.name = s.to_string(),
             Record::Boundary => {
                 let (polygon, end_i) = parse_polygon(&records[i..])?;
@@ -131,7 +93,12 @@ fn parse_cell(records: &[Record]) -> Result<(Box<Cell>, usize), Box<dyn Error>> 
             Record::EndStr => {
                 break;
             }
-            _ => (),
+            // Record::Text => {
+
+            // }
+            other => {
+                println!("get record from cell {:#?}", other);
+            }
         }
         i += 1;
     }
@@ -145,11 +112,14 @@ fn parse_polygon(records: &[Record]) -> Result<(Box<Polygon>, usize), Box<dyn Er
     let mut i = 0;
     while i < rec_len {
         match &records[i] {
+            Record::Boundary => (), //marks the beginning of a boundary element
             Record::Layer(l) => polygon.layer = *l,
             Record::DataType(d) => polygon.datatype = *d,
             Record::Points(points) => polygon.points = points.clone(),
             Record::EndElem => break,
-            _ => (),
+            other => {
+                println!("get record from polygon {:#?}", other);
+            }
         }
         i += 1;
     }
@@ -162,13 +132,16 @@ fn parse_path(records: &[Record]) -> Result<(Box<Path>, usize), Box<dyn Error>> 
     let mut i = 0;
     while i < rec_len {
         match &records[i] {
+            Record::Path => (), // marks the beginning of a path element
             Record::Layer(l) => path.layer = *l,
             Record::DataType(d) => path.datatype = *d,
             Record::Width(w) => path.width = *w,
             Record::PathType(t) => path.end_type = *t,
             Record::Points(points) => path.points = points.clone(),
             Record::EndElem => break,
-            _ => (),
+            other => {
+                println!("get record from path {:#?}", other);
+            }
         }
         i += 1;
     }
@@ -181,7 +154,8 @@ fn parse_sref(records: &[Record]) -> Result<(Box<Ref>, usize), Box<dyn Error>> {
     let mut i = 0;
     while i < rec_len {
         match &records[i] {
-            Record::StrRefName(s) => sref.ref_to = s.to_string(),
+            Record::StrRef => (), // marks the beginning of an SREF(structure reference) element
+            Record::StrRefName(s) => sref.ref_cell_name = s.to_string(),
             Record::RefTrans {
                 reflection_x,
                 absolute_magnification,
@@ -194,7 +168,9 @@ fn parse_sref(records: &[Record]) -> Result<(Box<Ref>, usize), Box<dyn Error>> {
             Record::Angle(a) => sref.angle = *a.first().unwrap(),
             Record::Points(points) => sref.origin = *points.first().unwrap(),
             Record::EndElem => break,
-            _ => (),
+            other => {
+                println!("get record from ref {:#?}", other);
+            }
         }
         i += 1;
     }

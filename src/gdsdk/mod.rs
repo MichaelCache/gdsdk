@@ -2,6 +2,7 @@ mod gds_error;
 mod gds_model;
 mod gds_reader;
 mod gds_record;
+mod gds_parser;
 
 pub use gds_model::{Cell, Lib, Path, Polygon, Ref};
 
@@ -82,5 +83,5 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
     }
 
     // transfer gds record data to gds object
-    Ok(gds_model::parse_gds(&records)?)
+    Ok(gds_parser::parse_gds(&records)?)
 }

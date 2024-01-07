@@ -103,7 +103,7 @@ pub enum PresentationHorizontalPos {
     Right,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone)]
 pub struct Date {
     pub mod_year: i16,
     pub mod_month: i16,
@@ -149,14 +149,14 @@ pub enum Record {
     Header {
         version: i16,
     },
-    BgnLib(Box<Date>),
+    BgnLib(Date),
     LibName(String),
     Units {
         unit_in_meter: f64,
         precision: f64,
     },
     EndLib,
-    BgnStr(Box<Date>),
+    BgnStr(Date),
     StrName(String),
     EndStr,
     Boundary,
@@ -170,7 +170,10 @@ pub enum Record {
     Points(Vec<(i32, i32)>),
     EndElem,
     StrRefName(String),
-    // COLROW,
+    COLROW {
+        column: i16,
+        row: i16,
+    },
     // TEXTNODE,
     // NODE,
     TextType(i16),
@@ -186,7 +189,7 @@ pub enum Record {
         absolute_magnification: bool,
         absolute_angle: bool,
     },
-    // MAG,
+    MAG(f64),
     Angle(Vec<f64>),
     // UINTEGER,
     // USTRING,

@@ -1,2 +1,2 @@
-# gdsio_rs
+# gdsdk
 read/write gdsii file implemented by rust

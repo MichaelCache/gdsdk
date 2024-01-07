@@ -106,7 +106,7 @@ pub fn record_type(bytes: &[u8]) -> Result<Record, Box<dyn Error>> {
         }
         BGNLIB => {
             let date = two_byte_int(data)?;
-            Ok(Record::BgnLib(Box::new(Date::from_i16_array(&date)?)))
+            Ok(Record::BgnLib(Date::from_i16_array(&date)?))
         }
         // TODO:
         // manual require libname follow UNIX filename conventions for length and valid characters. 1023
@@ -124,7 +124,7 @@ pub fn record_type(bytes: &[u8]) -> Result<Record, Box<dyn Error>> {
         ENDLIB => Ok(Record::EndLib),
         BGNSTR => {
             let date = two_byte_int(data)?;
-            Ok(Record::BgnStr(Box::new(Date::from_i16_array(&date)?)))
+            Ok(Record::BgnStr(Date::from_i16_array(&date)?))
         }
         // TODO:
         // manual require strname can be up to 32 characters
@@ -167,7 +167,13 @@ pub fn record_type(bytes: &[u8]) -> Result<Record, Box<dyn Error>> {
         // TODO:
         // follow STRNAME rule
         SNAME => Ok(Record::StrRefName(ascii_string(data)?)),
-        // COLROW => Record::COLROW,
+        COLROW => {
+            let nums = two_byte_int(data)?;
+            Ok(Record::COLROW {
+                column: nums[0],
+                row: nums[1],
+            })
+        }
         // TEXTNODE => Record::TEXTNODE,
         // NODE => Record::NODE,
         TEXTTYPE => Ok(Record::TextType(two_byte_int(data)?[0])),
@@ -223,7 +229,7 @@ pub fn record_type(bytes: &[u8]) -> Result<Record, Box<dyn Error>> {
             // test bit 14
             absolute_angle: if data[1] & 0x02 != 0 { true } else { false },
         }),
-        // MAG => Record::MAG,
+        MAG => Ok(Record::MAG(eight_byte_real(data)?[0])),
         ANGLE => Ok(Record::Angle(eight_byte_real(data)?)),
         // UINTEGER => Record::UINTEGER,
         // USTRING => Record::USTRING,
