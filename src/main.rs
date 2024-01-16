@@ -1,4 +1,4 @@
-mod gdsio;
+mod gdsdk;
 use std::{env, process};
 
 fn main() {
@@ -9,7 +9,7 @@ fn main() {
         process::exit(0);
     }
     for file in args {
-        match gdsio::read_gdsii(&file) {
+        match gdsdk::read_gdsii(&file) {
             Ok(lib) => println!("{:#?}", lib),
             Err(err) => eprintln!("parse file {} error: {}", file, err),
         }

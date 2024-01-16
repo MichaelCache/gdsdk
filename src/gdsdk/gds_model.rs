@@ -14,10 +14,10 @@ impl Lib {}
 #[derive(Default, Debug)]
 pub struct Cell {
     pub name: String,
-    pub polygons: Vec<Box<Polygon>>,
-    pub paths: Vec<Box<Path>>,
-    pub refs: Vec<Box<Ref>>,
-    pub label: Vec<Box<Text>>,
+    pub polygons: Vec<Polygon>,
+    pub paths: Vec<Path>,
+    pub refs: Vec<Ref>,
+    pub label: Vec<Text>,
     pub date: Date,
 }
 
@@ -48,7 +48,7 @@ pub struct Ref {
 }
 
 #[derive(Debug)]
-enum TextAnchor {
+pub enum TextAnchor {
     NW, // NorthWest
     N,
     NE, // NorthEast
@@ -65,10 +65,26 @@ impl Default for TextAnchor {
         TextAnchor::O
     }
 }
+
+#[derive(Debug)]
+pub enum TextFont {
+    Fonts0,
+    Fonts1,
+    Fonts2,
+    Fonts3,
+}
+
+impl Default for TextFont{
+    fn default() -> Self {
+        TextFont::Fonts0
+    }
+}
+
 #[derive(Default, Debug)]
 pub struct Text {
     pub layer: i16,
     pub datatype: i16,
+    pub font: TextFont,
     pub text: String,
     pub position: (f64, f64),
     pub anchor: TextAnchor,

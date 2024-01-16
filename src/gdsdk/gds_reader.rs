@@ -230,7 +230,7 @@ pub fn record_type(bytes: &[u8]) -> Result<Record, Box<dyn Error>> {
             absolute_angle: if data[1] & 0x02 != 0 { true } else { false },
         }),
         MAG => Ok(Record::MAG(eight_byte_real(data)?[0])),
-        ANGLE => Ok(Record::Angle(eight_byte_real(data)?)),
+        ANGLE => Ok(Record::Angle(eight_byte_real(data)?[0])),
         // UINTEGER => Record::UINTEGER,
         // USTRING => Record::USTRING,
         // REFLIBS => Record::REFLIBS,

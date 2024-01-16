@@ -190,7 +190,7 @@ pub enum Record {
         absolute_angle: bool,
     },
     MAG(f64),
-    Angle(Vec<f64>),
+    Angle(f64),
     // UINTEGER,
     // USTRING,
     // REFLIBS,
