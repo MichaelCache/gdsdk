@@ -72,7 +72,7 @@ fn parse_cell(records: &[Record]) -> Result<(Box<Cell>, usize), Box<dyn Error>> 
     let mut i = 0;
     while i < rec_len {
         match &records[i] {
-            Record::BgnStr(data) => cell.date = data.clone(), // last modification time of a structure and marks the beginning of a structure
+            Record::BgnStr(date) => cell.date = date.clone(), // last modification time of a structure and marks the beginning of a structure
             Record::StrName(s) => cell.name = s.to_string(),
             Record::Boundary => {
                 let (polygon, end_i) = parse_polygon(&records[i..])?;
@@ -89,13 +89,18 @@ fn parse_cell(records: &[Record]) -> Result<(Box<Cell>, usize), Box<dyn Error>> 
                 i += end_i;
                 cell.refs.push(sref);
             }
-            Record::EndStr => {
-                break;
-            }
             Record::Text => {
                 let (text, end_i) = parse_text(&records[i..])?;
                 i += end_i;
                 cell.label.push(text)
+            }
+            Record::AryRef => {
+                let (aref, end_i) = parse_aref(&records[i..])?;
+                i += end_i;
+                cell.refs.push(aref);
+            }
+            Record::EndStr => {
+                break;
             }
             other => {
                 println!("get record from cell {:#?}", other);
@@ -220,7 +225,7 @@ fn parse_sref(records: &[Record]) -> Result<(Ref, usize), Box<dyn Error>> {
     while i < rec_len {
         match &records[i] {
             Record::StrRef => (), // marks the beginning of an SREF(structure reference) element
-            Record::StrRefName(s) => sref.ref_cell_name = s.to_string(),
+            Record::StrRefName(s) => sref.refed_cell = RefCell::CellName(s.to_string()),
             Record::RefTrans {
                 reflection_x,
                 absolute_magnification,
@@ -230,6 +235,7 @@ fn parse_sref(records: &[Record]) -> Result<(Ref, usize), Box<dyn Error>> {
                 sref.abs_magnific = *absolute_magnification;
                 sref.abs_angel = *absolute_angle;
             }
+            Record::MAG(mag) => sref.magnific = *mag,
             Record::Angle(angle) => sref.angle = std::f64::consts::PI / 180.0 * angle,
             Record::Points(points) => sref.origin = *points.first().unwrap(),
             Record::EndElem => break,
@@ -240,4 +246,42 @@ fn parse_sref(records: &[Record]) -> Result<(Ref, usize), Box<dyn Error>> {
         i += 1;
     }
     Ok((sref, i))
+}
+
+fn parse_aref(records: &[Record]) -> Result<(Ref, usize), Box<dyn Error>> {
+    let mut aref = Ref::default();
+    let rec_len = records.len();
+    let mut i = 0;
+    while i < rec_len {
+        match &records[i] {
+            Record::AryRef => (), // marks the beginning of an SREF(structure reference) element
+            Record::StrRefName(s) => aref.refed_cell = RefCell::CellName(s.to_string()),
+            Record::RefTrans {
+                reflection_x,
+                absolute_magnification,
+                absolute_angle,
+            } => {
+                aref.reflection_x = *reflection_x;
+                aref.abs_magnific = *absolute_magnification;
+                aref.abs_angel = *absolute_angle;
+            }
+            Record::MAG(mag) => aref.magnific = *mag,
+            Record::Angle(angle) => aref.angle = std::f64::consts::PI / 180.0 * angle,
+            Record::COLROW { column, row } => {
+                aref.column = *column;
+                aref.row = *row;
+            }
+            Record::Points(points) => {
+                aref.origin = *points.first().unwrap();
+                aref.spaceing_row = points[1];
+                aref.spaceing_col = points[2];
+            }
+            Record::EndElem => break,
+            other => {
+                println!("get record from ref {:#?}", other);
+            }
+        }
+        i += 1;
+    }
+    Ok((aref, i))
 }

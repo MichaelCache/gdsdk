@@ -37,14 +37,31 @@ pub struct Path {
     pub points: Vec<(i32, i32)>,
 }
 
+#[derive(Debug)]
+pub enum RefCell {
+    Cell(Cell),
+    CellName(String),
+}
+
+impl Default for RefCell {
+    fn default() -> Self {
+        RefCell::CellName("".to_string())
+    }
+}
+
 #[derive(Default, Debug)]
 pub struct Ref {
-    pub ref_cell_name: String,
+    pub refed_cell: RefCell,
     pub reflection_x: bool,
     pub abs_magnific: bool,
+    pub magnific: f64,
     pub abs_angel: bool,
     pub angle: f64, //measured in degrees and in the counterclockwise direction
     pub origin: (i32, i32),
+    pub row: i16,
+    pub column: i16,
+    pub spaceing_row: (i32, i32),
+    pub spaceing_col: (i32, i32),
 }
 
 #[derive(Debug)]
@@ -74,7 +91,7 @@ pub enum TextFont {
     Fonts3,
 }
 
-impl Default for TextFont{
+impl Default for TextFont {
     fn default() -> Self {
         TextFont::Fonts0
     }
