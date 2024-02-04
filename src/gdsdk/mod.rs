@@ -1,14 +1,14 @@
 mod gds_error;
 mod gds_model;
+mod gds_parser;
 mod gds_reader;
 mod gds_record;
-mod gds_parser;
 
 pub use gds_model::{Cell, Lib, Path, Polygon, Ref};
 
+use std::error::Error;
 use std::fs::read;
 use std::path;
-use std::error::Error;
 
 /// read gds file return gds lib
 pub fn read_gdsii<T: AsRef<path::Path>>(
@@ -22,6 +22,7 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
         )));
     }
 
+    // check valid gds file
     if let gds_record::HEADER = &buff[2..4] {
         // do nothing
     } else {
@@ -55,7 +56,7 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
                 idx + 2
             ))));
         }
-        
+
         match gds_reader::record_type(&buff[idx..idx + record_len]) {
             Ok(r) => records.push(r),
             Err(err) => {

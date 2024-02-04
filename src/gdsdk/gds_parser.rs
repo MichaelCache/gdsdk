@@ -30,6 +30,7 @@ fn parse_lib(records: &[Record]) -> Result<(Box<Lib>, usize), Box<dyn Error>> {
     let mut lib = Box::new(Lib::default());
     let rec_len = records.len();
     let mut i = 0;
+    let mut factor = 0.0;
     while i < rec_len {
         match &records[i] {
             Record::BgnLib(date) => lib.date = date.clone(), //modification time of lib, and marks beginning of library
@@ -47,9 +48,10 @@ fn parse_lib(records: &[Record]) -> Result<(Box<Lib>, usize), Box<dyn Error>> {
                 }
 
                 lib.precision = *precision;
+                factor = *unit_in_meter;
             }
             Record::BgnStr(_) => {
-                let (cell, end_i) = parse_cell(&records[i..])?;
+                let (cell, end_i) = parse_cell(&records[i..], factor)?;
                 lib.cells.push(cell);
                 i += end_i;
             }
@@ -66,7 +68,7 @@ fn parse_lib(records: &[Record]) -> Result<(Box<Lib>, usize), Box<dyn Error>> {
     Ok((lib, i))
 }
 
-fn parse_cell(records: &[Record]) -> Result<(Box<Cell>, usize), Box<dyn Error>> {
+fn parse_cell(records: &[Record], factor: f64) -> Result<(Box<Cell>, usize), Box<dyn Error>> {
     let mut cell = Box::new(Cell::default());
     let rec_len = records.len();
     let mut i = 0;
@@ -75,27 +77,27 @@ fn parse_cell(records: &[Record]) -> Result<(Box<Cell>, usize), Box<dyn Error>> 
             Record::BgnStr(date) => cell.date = date.clone(), // last modification time of a structure and marks the beginning of a structure
             Record::StrName(s) => cell.name = s.to_string(),
             Record::Boundary => {
-                let (polygon, end_i) = parse_polygon(&records[i..])?;
+                let (polygon, end_i) = parse_polygon(&records[i..], factor)?;
                 i += end_i;
                 cell.polygons.push(polygon);
             }
             Record::Path => {
-                let (path, end_i) = parse_path(&records[i..])?;
+                let (path, end_i) = parse_path(&records[i..], factor)?;
                 i += end_i;
                 cell.paths.push(path);
             }
             Record::StrRef => {
-                let (sref, end_i) = parse_sref(&records[i..])?;
+                let (sref, end_i) = parse_sref(&records[i..], factor)?;
                 i += end_i;
                 cell.refs.push(sref);
             }
             Record::Text => {
-                let (text, end_i) = parse_text(&records[i..])?;
+                let (text, end_i) = parse_text(&records[i..], factor)?;
                 i += end_i;
                 cell.label.push(text)
             }
             Record::AryRef => {
-                let (aref, end_i) = parse_aref(&records[i..])?;
+                let (aref, end_i) = parse_aref(&records[i..], factor)?;
                 i += end_i;
                 cell.refs.push(aref);
             }
@@ -112,7 +114,7 @@ fn parse_cell(records: &[Record]) -> Result<(Box<Cell>, usize), Box<dyn Error>> 
     Ok((cell, i))
 }
 
-fn parse_text(records: &[Record]) -> Result<(Text, usize), Box<dyn Error>> {
+fn parse_text(records: &[Record], factor: f64) -> Result<(Text, usize), Box<dyn Error>> {
     let mut text = Text::default();
     let rec_len = records.len();
     let mut i = 0;
@@ -159,10 +161,8 @@ fn parse_text(records: &[Record]) -> Result<(Text, usize), Box<dyn Error>> {
                 absolute_angle,
             } => text.x_reflection = *reflection_x,
             Record::Points(points) => {
-                text.position = (
-                    points.first().unwrap().0 as f64,
-                    points.first().unwrap().1 as f64,
-                )
+                text.position =
+                    Points::new(points[0].0 as f64 * factor, points[0].1 as f64 * factor)
             }
             Record::EndElem => break,
             other => {
@@ -174,7 +174,7 @@ fn parse_text(records: &[Record]) -> Result<(Text, usize), Box<dyn Error>> {
     Ok((text, i))
 }
 
-fn parse_polygon(records: &[Record]) -> Result<(Polygon, usize), Box<dyn Error>> {
+fn parse_polygon(records: &[Record], factor: f64) -> Result<(Polygon, usize), Box<dyn Error>> {
     let mut polygon = Polygon::default();
     let rec_len = records.len();
     let mut i = 0;
@@ -184,7 +184,10 @@ fn parse_polygon(records: &[Record]) -> Result<(Polygon, usize), Box<dyn Error>>
             Record::Layer(l) => polygon.layer = *l,
             Record::DataType(d) => polygon.datatype = *d,
             Record::Points(points) => {
-                polygon.points = points.iter().map(|&(x, y)| (x as f64, y as f64)).collect()
+                polygon.points = points
+                    .iter()
+                    .map(|&(x, y)| Points::new(x as f64 * factor, y as f64 * factor))
+                    .collect()
             }
             Record::EndElem => break,
             other => {
@@ -196,7 +199,7 @@ fn parse_polygon(records: &[Record]) -> Result<(Polygon, usize), Box<dyn Error>>
     Ok((polygon, i))
 }
 
-fn parse_path(records: &[Record]) -> Result<(Path, usize), Box<dyn Error>> {
+fn parse_path(records: &[Record], factor: f64) -> Result<(Path, usize), Box<dyn Error>> {
     let mut path = Path::default();
     let rec_len = records.len();
     let mut i = 0;
@@ -205,9 +208,14 @@ fn parse_path(records: &[Record]) -> Result<(Path, usize), Box<dyn Error>> {
             Record::Path => (), // marks the beginning of a path element
             Record::Layer(l) => path.layer = *l,
             Record::DataType(d) => path.datatype = *d,
-            Record::Width(w) => path.width = *w,
+            Record::Width(w) => path.width = *w as f64 * factor,
             Record::PathType(t) => path.end_type = *t,
-            Record::Points(points) => path.points = points.clone(),
+            Record::Points(points) => {
+                path.points = points
+                    .iter()
+                    .map(|&(x, y)| Points::new(x as f64 * factor, y as f64 * factor))
+                    .collect();
+            }
             Record::EndElem => break,
             other => {
                 println!("get record from path {:#?}", other);
@@ -218,7 +226,7 @@ fn parse_path(records: &[Record]) -> Result<(Path, usize), Box<dyn Error>> {
     Ok((path, i))
 }
 
-fn parse_sref(records: &[Record]) -> Result<(Ref, usize), Box<dyn Error>> {
+fn parse_sref(records: &[Record], factor: f64) -> Result<(Ref, usize), Box<dyn Error>> {
     let mut sref = Ref::default();
     let rec_len = records.len();
     let mut i = 0;
@@ -237,7 +245,9 @@ fn parse_sref(records: &[Record]) -> Result<(Ref, usize), Box<dyn Error>> {
             }
             Record::MAG(mag) => sref.magnific = *mag,
             Record::Angle(angle) => sref.angle = std::f64::consts::PI / 180.0 * angle,
-            Record::Points(points) => sref.origin = *points.first().unwrap(),
+            Record::Points(points) => {
+                sref.origin = Points::new(points[0].0 as f64 * factor, points[0].1 as f64 * factor)
+            }
             Record::EndElem => break,
             other => {
                 println!("get record from ref {:#?}", other);
@@ -248,7 +258,7 @@ fn parse_sref(records: &[Record]) -> Result<(Ref, usize), Box<dyn Error>> {
     Ok((sref, i))
 }
 
-fn parse_aref(records: &[Record]) -> Result<(Ref, usize), Box<dyn Error>> {
+fn parse_aref(records: &[Record], factor: f64) -> Result<(Ref, usize), Box<dyn Error>> {
     let mut aref = Ref::default();
     let rec_len = records.len();
     let mut i = 0;
@@ -272,9 +282,11 @@ fn parse_aref(records: &[Record]) -> Result<(Ref, usize), Box<dyn Error>> {
                 aref.row = *row;
             }
             Record::Points(points) => {
-                aref.origin = *points.first().unwrap();
-                aref.spaceing_row = points[1];
-                aref.spaceing_col = points[2];
+                aref.origin = Points::new(points[0].0 as f64 * factor, points[0].1 as f64 * factor);
+                aref.spaceing_row =
+                    Points::new(points[1].0 as f64 * factor, points[1].1 as f64 * factor);
+                aref.spaceing_col =
+                    Points::new(points[2].0 as f64 * factor, points[2].1 as f64 * factor);
             }
             Record::EndElem => break,
             other => {

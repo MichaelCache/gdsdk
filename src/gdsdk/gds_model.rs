@@ -12,6 +12,30 @@ pub struct Lib {
 impl Lib {}
 
 #[derive(Default, Debug)]
+pub struct Points {
+    pub x: f64,
+    pub y: f64,
+}
+
+impl Points {
+    pub fn new(x: f64, y: f64) -> Self {
+        Points { x, y }
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct Vector {
+    pub x: f64,
+    pub y: f64,
+}
+
+impl Vector {
+    pub fn new(x: f64, y: f64) -> Self {
+        Vector { x, y }
+    }
+}
+
+#[derive(Default, Debug)]
 pub struct Cell {
     pub name: String,
     pub polygons: Vec<Polygon>,
@@ -25,16 +49,16 @@ pub struct Cell {
 pub struct Polygon {
     pub layer: i16,
     pub datatype: i16,
-    pub points: Vec<(f64, f64)>,
+    pub points: Vec<Points>,
 }
 
 #[derive(Default, Debug)]
 pub struct Path {
     pub layer: i16,
     pub datatype: i16,
-    pub width: i32,
+    pub width: f64,
     pub end_type: i16,
-    pub points: Vec<(i32, i32)>,
+    pub points: Vec<Points>,
 }
 
 #[derive(Debug)]
@@ -57,11 +81,11 @@ pub struct Ref {
     pub magnific: f64,
     pub abs_angel: bool,
     pub angle: f64, //measured in degrees and in the counterclockwise direction
-    pub origin: (i32, i32),
+    pub origin: Points,
     pub row: i16,
     pub column: i16,
-    pub spaceing_row: (i32, i32),
-    pub spaceing_col: (i32, i32),
+    pub spaceing_row: Points,
+    pub spaceing_col: Points,
 }
 
 #[derive(Debug)]
@@ -103,7 +127,7 @@ pub struct Text {
     pub datatype: i16,
     pub font: TextFont,
     pub text: String,
-    pub position: (f64, f64),
+    pub position: Points,
     pub anchor: TextAnchor,
     pub rotation: f64,      // in radians
     pub magnification: f64, // (not supported by OASIS)
@@ -115,6 +139,6 @@ pub struct Text {
 pub struct Repetition {
     pub count_1: u64,
     pub count_2: u64,
-    pub vec_1: (f64, f64),
-    pub vec_2: (f64, f64),
+    pub vec_1: Vector,
+    pub vec_2: Vector,
 }
