@@ -1,38 +1,28 @@
 use super::gds_error::*;
 use super::gds_model::*;
 use super::gds_record::*;
+use std::slice::Iter;
 
 pub fn parse_gds(records: &[Record]) -> Result<Box<Lib>, Box<dyn Error>> {
     let mut lib: Box<Lib> = Box::new(Lib::default());
-    let rec_len = records.len();
-    // let mut next_i: usize;
-    let mut i = 0;
-    while i < rec_len {
-        match records[i] {
-            Record::Header { version: _ } => {
-                i += 1;
-                continue;
-            }
-            Record::BgnLib(_) => (lib, i) = parse_lib(&records[i..])?,
-            Record::EndLib => {
-                i += 1;
-                continue;
-            }
+    let mut iter = records.iter();
+    while let Some(record) = iter.next() {
+        match record {
+            Record::Header { version: _ } => {}
+            Record::BgnLib(_) => lib = parse_lib(&mut iter)?,
+            Record::EndLib => {}
             _ => return Err(Box::new(gds_err("not valid gds lib"))),
         }
-        i += 1;
     }
 
     Ok(lib)
 }
 
-fn parse_lib(records: &[Record]) -> Result<(Box<Lib>, usize), Box<dyn Error>> {
+fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
     let mut lib = Box::new(Lib::default());
-    let rec_len = records.len();
-    let mut i = 0;
     let mut factor = 0.0;
-    while i < rec_len {
-        match &records[i] {
+    while let Some(record) = iter.next() {
+        match record {
             Record::BgnLib(date) => lib.date = date.clone(), //modification time of lib, and marks beginning of library
             Record::LibName(s) => lib.name = s.to_string(),
             Record::Units {
@@ -51,9 +41,8 @@ fn parse_lib(records: &[Record]) -> Result<(Box<Lib>, usize), Box<dyn Error>> {
                 factor = *unit_in_meter;
             }
             Record::BgnStr(_) => {
-                let (cell, end_i) = parse_cell(&records[i..], factor)?;
+                let cell = parse_cell(iter, factor)?;
                 lib.cells.push(cell);
-                i += end_i;
             }
             Record::EndLib => {
                 break;
@@ -62,43 +51,35 @@ fn parse_lib(records: &[Record]) -> Result<(Box<Lib>, usize), Box<dyn Error>> {
                 println!("get record from lib {:#?}", other);
             }
         }
-        i += 1;
     }
 
-    Ok((lib, i))
+    Ok(lib)
 }
 
-fn parse_cell(records: &[Record], factor: f64) -> Result<(Box<Cell>, usize), Box<dyn Error>> {
+fn parse_cell(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Box<Cell>, Box<dyn Error>> {
     let mut cell = Box::new(Cell::default());
-    let rec_len = records.len();
-    let mut i = 0;
-    while i < rec_len {
-        match &records[i] {
+    while let Some(record) = iter.next() {
+        match record {
             Record::BgnStr(date) => cell.date = date.clone(), // last modification time of a structure and marks the beginning of a structure
             Record::StrName(s) => cell.name = s.to_string(),
             Record::Boundary => {
-                let (polygon, end_i) = parse_polygon(&records[i..], factor)?;
-                i += end_i;
+                let polygon = parse_polygon(iter, factor)?;
                 cell.polygons.push(polygon);
             }
             Record::Path => {
-                let (path, end_i) = parse_path(&records[i..], factor)?;
-                i += end_i;
+                let path = parse_path(iter, factor)?;
                 cell.paths.push(path);
             }
             Record::StrRef => {
-                let (sref, end_i) = parse_sref(&records[i..], factor)?;
-                i += end_i;
+                let sref = parse_sref(iter, factor)?;
                 cell.refs.push(sref);
             }
             Record::Text => {
-                let (text, end_i) = parse_text(&records[i..], factor)?;
-                i += end_i;
+                let text = parse_text(iter, factor)?;
                 cell.label.push(text)
             }
             Record::AryRef => {
-                let (aref, end_i) = parse_aref(&records[i..], factor)?;
-                i += end_i;
+                let aref = parse_aref(iter, factor)?;
                 cell.refs.push(aref);
             }
             Record::EndStr => {
@@ -108,18 +89,15 @@ fn parse_cell(records: &[Record], factor: f64) -> Result<(Box<Cell>, usize), Box
                 println!("get record from cell {:#?}", other);
             }
         }
-        i += 1;
     }
 
-    Ok((cell, i))
+    Ok(cell)
 }
 
-fn parse_text(records: &[Record], factor: f64) -> Result<(Text, usize), Box<dyn Error>> {
+fn parse_text(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Text, Box<dyn Error>> {
     let mut text = Text::default();
-    let rec_len = records.len();
-    let mut i = 0;
-    while i < rec_len {
-        match &records[i] {
+    while let Some(record) = iter.next() {
+        match record {
             Record::Text => (), //marks the beginning of a text element
             Record::Layer(l) => text.layer = *l,
             Record::TextType(d) => text.datatype = *d,
@@ -169,17 +147,14 @@ fn parse_text(records: &[Record], factor: f64) -> Result<(Text, usize), Box<dyn 
                 println!("get record from Text {:#?}", other);
             }
         }
-        i += 1;
     }
-    Ok((text, i))
+    Ok(text)
 }
 
-fn parse_polygon(records: &[Record], factor: f64) -> Result<(Polygon, usize), Box<dyn Error>> {
+fn parse_polygon(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Polygon, Box<dyn Error>> {
     let mut polygon = Polygon::default();
-    let rec_len = records.len();
-    let mut i = 0;
-    while i < rec_len {
-        match &records[i] {
+    while let Some(record) = iter.next() {
+        match record {
             Record::Boundary => (), //marks the beginning of a boundary element
             Record::Layer(l) => polygon.layer = *l,
             Record::DataType(d) => polygon.datatype = *d,
@@ -194,17 +169,14 @@ fn parse_polygon(records: &[Record], factor: f64) -> Result<(Polygon, usize), Bo
                 println!("get record from polygon {:#?}", other);
             }
         }
-        i += 1;
     }
-    Ok((polygon, i))
+    Ok(polygon)
 }
 
-fn parse_path(records: &[Record], factor: f64) -> Result<(Path, usize), Box<dyn Error>> {
+fn parse_path(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Path, Box<dyn Error>> {
     let mut path = Path::default();
-    let rec_len = records.len();
-    let mut i = 0;
-    while i < rec_len {
-        match &records[i] {
+    while let Some(record) = iter.next() {
+        match record {
             Record::Path => (), // marks the beginning of a path element
             Record::Layer(l) => path.layer = *l,
             Record::DataType(d) => path.datatype = *d,
@@ -221,17 +193,14 @@ fn parse_path(records: &[Record], factor: f64) -> Result<(Path, usize), Box<dyn 
                 println!("get record from path {:#?}", other);
             }
         }
-        i += 1;
     }
-    Ok((path, i))
+    Ok(path)
 }
 
-fn parse_sref(records: &[Record], factor: f64) -> Result<(Ref, usize), Box<dyn Error>> {
+fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Ref, Box<dyn Error>> {
     let mut sref = Ref::default();
-    let rec_len = records.len();
-    let mut i = 0;
-    while i < rec_len {
-        match &records[i] {
+    while let Some(record) = iter.next() {
+        match record {
             Record::StrRef => (), // marks the beginning of an SREF(structure reference) element
             Record::StrRefName(s) => sref.refed_cell = RefCell::CellName(s.to_string()),
             Record::RefTrans {
@@ -253,17 +222,14 @@ fn parse_sref(records: &[Record], factor: f64) -> Result<(Ref, usize), Box<dyn E
                 println!("get record from ref {:#?}", other);
             }
         }
-        i += 1;
     }
-    Ok((sref, i))
+    Ok(sref)
 }
 
-fn parse_aref(records: &[Record], factor: f64) -> Result<(Ref, usize), Box<dyn Error>> {
+fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Ref, Box<dyn Error>> {
     let mut aref = Ref::default();
-    let rec_len = records.len();
-    let mut i = 0;
-    while i < rec_len {
-        match &records[i] {
+    while let Some(record) = iter.next() {
+        match record {
             Record::AryRef => (), // marks the beginning of an SREF(structure reference) element
             Record::StrRefName(s) => aref.refed_cell = RefCell::CellName(s.to_string()),
             Record::RefTrans {
@@ -293,7 +259,6 @@ fn parse_aref(records: &[Record], factor: f64) -> Result<(Ref, usize), Box<dyn E
                 println!("get record from ref {:#?}", other);
             }
         }
-        i += 1;
     }
-    Ok((aref, i))
+    Ok(aref)
 }
