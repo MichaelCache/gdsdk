@@ -1,11 +1,12 @@
 use super::gds_record::Date;
+use std::rc::Rc;
 
 #[derive(Default, Debug)]
 pub struct Lib {
     pub name: String,
     pub units: f64, //in meter
     pub precision: f64,
-    pub cells: Vec<Box<Cell>>,
+    pub cells: Vec<Rc<std::cell::RefCell<Cell>>>,
     pub date: Date,
 }
 
@@ -63,7 +64,7 @@ pub struct Path {
 
 #[derive(Debug)]
 pub enum RefCell {
-    Cell(Cell),
+    Cell(Rc<std::cell::RefCell<Cell>>),
     CellName(String),
 }
 
@@ -77,15 +78,25 @@ impl Default for RefCell {
 pub struct Ref {
     pub refed_cell: RefCell,
     pub reflection_x: bool,
-    pub abs_magnific: bool,
+    // pub abs_magnific: bool,
     pub magnific: f64,
-    pub abs_angel: bool,
+    // pub abs_angel: bool,
     pub angle: f64, //measured in degrees and in the counterclockwise direction
     pub origin: Points,
     pub row: i16,
     pub column: i16,
     pub spaceing_row: Points,
     pub spaceing_col: Points,
+}
+
+impl  Ref {
+    pub fn new() -> Self {
+        Ref {
+            reflection_x: false,
+            magnific: 1.0,
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Debug)]
