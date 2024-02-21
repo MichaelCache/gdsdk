@@ -1,5 +1,5 @@
-use super::gds_record::Date;
-use std::rc::Rc;
+use super::gds_record::{self, Date};
+use std::{collections::HashMap, rc::Rc};
 
 #[derive(Default, Debug)]
 pub struct Lib {
@@ -10,7 +10,57 @@ pub struct Lib {
     pub date: Date,
 }
 
-impl Lib {}
+fn get_cell_from_ref(refer: &Ref, uniqcells: &mut HashMap<String, Rc<std::cell::RefCell<Cell>>>) {
+    if let RefCell::Cell(c) = &refer.refed_cell {
+        let cell = (*(*c)).borrow();
+        if !uniqcells.contains_key(&cell.name) {
+            uniqcells.insert(cell.name.clone(), c.clone());
+        }
+        for r in &cell.refs {
+            get_cell_from_ref(r, uniqcells);
+        }
+    } else {
+        panic!("Reference should not refer cell by name");
+    }
+}
+
+impl Lib {
+    fn all_cells(&self) -> Vec<Rc<std::cell::RefCell<Cell>>> {
+        let mut uniqcells = HashMap::<String, Rc<std::cell::RefCell<Cell>>>::new();
+        let mut cells_vec = Vec::<Rc<std::cell::RefCell<Cell>>>::new();
+        for c in &self.cells {
+            let cell = (*(*c)).borrow();
+            if !uniqcells.contains_key(&cell.name) {
+                uniqcells.insert(cell.name.clone(), c.clone());
+            }
+            for r in &cell.refs {
+                get_cell_from_ref(r, &mut uniqcells);
+            }
+        }
+
+        for c in uniqcells {
+            cells_vec.push(c.1.clone());
+        }
+        cells_vec
+    }
+
+    pub fn write_to_gds(&self) -> Vec<u8> {
+        self.to_gds()
+    }
+}
+
+impl GdsObject for Lib {
+    fn to_gds(&self) -> Vec<u8> {
+        let mut data = Vec::<u8>::new();
+        data.extend(gds_record::HEADER);
+        let all_cells = self.all_cells();
+        all_cells.iter().for_each(|c|{
+            let cell = (*c).borrow();
+            data.extend(cell.to_gds());
+        });
+        data
+    }
+}
 
 #[derive(Default, Debug)]
 pub struct Points {
@@ -46,6 +96,13 @@ pub struct Cell {
     pub date: Date,
 }
 
+impl GdsObject for Cell {
+    fn to_gds(&self) -> Vec<u8> {
+        let mut data = Vec::<u8>::new();
+        data
+    }
+}
+
 #[derive(Default, Debug)]
 pub struct Polygon {
     pub layer: i16,
@@ -76,7 +133,7 @@ impl Default for RefCell {
 
 #[derive(Default, Debug)]
 pub struct Ref {
-    pub refed_cell: RefCell,
+    pub(crate) refed_cell: RefCell,
     pub reflection_x: bool,
     // pub abs_magnific: bool,
     pub magnific: f64,
@@ -89,7 +146,7 @@ pub struct Ref {
     pub spaceing_col: Points,
 }
 
-impl  Ref {
+impl Ref {
     pub fn new() -> Self {
         Ref {
             reflection_x: false,
@@ -152,4 +209,8 @@ pub struct Repetition {
     pub count_2: u64,
     pub vec_1: Vector,
     pub vec_2: Vector,
+}
+
+trait GdsObject {
+    fn to_gds(&self) -> Vec<u8>;
 }

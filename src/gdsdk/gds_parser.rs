@@ -66,12 +66,12 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
         }
     }
 
-    // step.2 connect reference to cell, only cell not be refered
+    // step.2 connect reference to cell, only add cell not be refered to lib
     let mut not_refered_cell = name_cell_map.clone();
     for c in &name_cell_map {
         let mut cell = c.1.borrow_mut();
         for refer in cell.refs.iter_mut() {
-            if let gds_model::RefCell::CellName(name) = &mut refer.refed_cell {
+            if let gds_model::RefCell::CellName(name) = &refer.refed_cell {
                 let refered_cell = name_cell_map.get(name).unwrap();
                 not_refered_cell.remove(name);
                 refer.refed_cell = gds_model::RefCell::Cell(refered_cell.clone());

@@ -10,7 +10,10 @@ fn main() {
     }
     for file in args {
         match gdsdk::read_gdsii(&file) {
-            Ok(lib) => println!("{:#?}", lib),
+            Ok(lib) => {
+                println!("{:#?}", lib);
+                lib.write_to_gds();
+            }
             Err(err) => eprintln!("parse file {} error: {}", file, err),
         }
     }
