@@ -1,4 +1,5 @@
 use super::gds_record::{self, Date};
+use super::gds_writer::*;
 use std::{collections::HashMap, rc::Rc};
 
 #[derive(Default, Debug)]
@@ -44,20 +45,81 @@ impl Lib {
         cells_vec
     }
 
-    pub fn write_to_gds(&self) -> Vec<u8> {
-        self.to_gds()
+    pub fn gds_bytes(&self) -> Vec<u8> {
+        self.to_gds(0.0)
     }
 }
 
+const GDS_VERSIOIN: i16 = 600;
+
 impl GdsObject for Lib {
-    fn to_gds(&self) -> Vec<u8> {
+    fn to_gds(&self, _: f64) -> Vec<u8> {
         let mut data = Vec::<u8>::new();
-        data.extend(gds_record::HEADER);
+
+        // gds data binary format is in big endian
+        // header
+        let mut header_data = Vec::<u8>::new();
+
+        header_data.extend(gds_record::HEADER);
+        header_data.extend(GDS_VERSIOIN.to_be_bytes());
+
+        data.extend((header_data.len() as i16 + 2_i16).to_be_bytes());
+        data.extend(header_data);
+
+        // date
+        let mut date_data = Vec::<u8>::new();
+        date_data.extend(gds_record::BGNLIB);
+        date_data.extend(self.date.mod_year.to_be_bytes());
+        date_data.extend(self.date.mod_month.to_be_bytes());
+        date_data.extend(self.date.mod_day.to_be_bytes());
+        date_data.extend(self.date.mod_hour.to_be_bytes());
+        date_data.extend(self.date.mod_minute.to_be_bytes());
+        date_data.extend(self.date.mod_second.to_be_bytes());
+        date_data.extend(self.date.acc_year.to_be_bytes());
+        date_data.extend(self.date.acc_month.to_be_bytes());
+        date_data.extend(self.date.acc_day.to_be_bytes());
+        date_data.extend(self.date.acc_hour.to_be_bytes());
+        date_data.extend(self.date.acc_minute.to_be_bytes());
+        date_data.extend(self.date.acc_second.to_be_bytes());
+
+        data.extend((date_data.len() as i16 + 2_i16).to_be_bytes());
+        data.extend(date_data);
+
+        // lib name
+        let mut lib_name = Vec::<u8>::new();
+        lib_name.extend(gds_record::LIBNAME);
+        let mut name = ascii_string_to_be_bytes(&self.name);
+        if !name.len().is_power_of_two() {
+            name.push(0);
+        }
+        lib_name.extend(name);
+
+        data.extend((lib_name.len() as i16 + 2_i16).to_be_bytes());
+        data.extend(lib_name);
+
+        // unit
+        let mut unit_data = Vec::<u8>::new();
+        unit_data.extend(gds_record::UNITS);
+        unit_data.extend(f64_to_gds_bytes(self.precision / self.units));
+        unit_data.extend(f64_to_gds_bytes(self.precision));
+
+        data.extend((unit_data.len() as i16 + 2_i16).to_be_bytes());
+        data.extend(unit_data);
+
+        let scaling = self.units / self.precision;
+
         let all_cells = self.all_cells();
-        all_cells.iter().for_each(|c|{
+        all_cells.iter().for_each(|c| {
             let cell = (*c).borrow();
-            data.extend(cell.to_gds());
+            data.extend(cell.to_gds(scaling));
         });
+
+        // endlib
+        let mut endlib_data = Vec::<u8>::new();
+        endlib_data.extend(gds_record::ENDLIB);
+
+        data.extend((endlib_data.len() as i16 + 2_i16).to_be_bytes());
+        data.extend(endlib_data);
         data
     }
 }
@@ -97,7 +159,7 @@ pub struct Cell {
 }
 
 impl GdsObject for Cell {
-    fn to_gds(&self) -> Vec<u8> {
+    fn to_gds(&self, scaling: f64) -> Vec<u8> {
         let mut data = Vec::<u8>::new();
         data
     }
@@ -212,5 +274,5 @@ pub struct Repetition {
 }
 
 trait GdsObject {
-    fn to_gds(&self) -> Vec<u8>;
+    fn to_gds(&self, scaling: f64) -> Vec<u8>;
 }

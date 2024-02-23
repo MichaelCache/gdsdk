@@ -41,7 +41,7 @@ fn four_byte_int(byte: &[u8]) -> Result<Vec<i32>, Box<dyn Error>> {
 /// SEEEEEEE EEEEMMMM MMMMMMMM MMMMMMMM
 /// MMMMMMMM MMMMMMMM MMMMMMMM MMMMMMMM
 /// and value = (-1)^S*2^(E-1023)*(1+M/2^52)
-fn gdsii_eight_byte_real(byte: &[u8]) -> Result<f64, Box<dyn Error>> {
+pub(crate) fn gdsii_eight_byte_real(byte: &[u8]) -> Result<f64, Box<dyn Error>> {
     if byte.len() != 8 {
         return Err(Box::new(gds_err(
             "transfer eight byte real failed: byte length != 8",
