@@ -11,25 +11,28 @@ pub fn ascii_string_to_be_bytes(s: &str) -> Vec<u8> {
 
     be_bytes
 }
-// FIXME:not correct
+
 pub fn f64_to_gds_bytes(v: f64) -> Vec<u8> {
     let mut be_bytes = Vec::<u8>::new();
-    be_bytes.resize(8, 0);
-    let v_bytes = v.to_be_bytes();
+    be_bytes.resize(1, 0);
+
     // sign
-    be_bytes[0] |= v_bytes[0] & 0x80;
+    be_bytes[0] |= (v.is_sign_negative() as u8).to_be_bytes()[0];
     // exponent
-    let mut exp =  (v_bytes[0] & 0x0f << 4 | (v_bytes[1] & 0xf0)) as u32;
-    exp = exp + 1023 - 64;
-    
+    let fexp = 0.25 * v.log2();
+    let mut exponent = fexp.ceil();
+    if exponent == fexp {
+        exponent = exponent + 1_f64;
+    }
+
     // mantissa
-    be_bytes[1] |= v_bytes[1] & 0x0f << 4 | (v_bytes[2] & 0xf0);
-    be_bytes[2] |= v_bytes[2] & 0x0f << 4 | (v_bytes[3] & 0xf0);
-    be_bytes[3] |= v_bytes[3] & 0x0f << 4 | (v_bytes[4] & 0xf0);
-    be_bytes[4] |= v_bytes[4] & 0x0f << 4 | (v_bytes[5] & 0xf0);
-    be_bytes[5] |= v_bytes[5] & 0x0f << 4 | (v_bytes[6] & 0xf0);
-    be_bytes[6] |= v_bytes[6] & 0x0f << 4 | (v_bytes[7] & 0xf0);
-    be_bytes[7] |= v_bytes[7] & 0x0f << 4;
+    let mantissa = v * 16_f64.powf(14_f64 - exponent);
+    let mantissa_byte = (mantissa as u64).to_be_bytes();
+
+    // assemble binary
+    be_bytes[0] |= ((exponent + 64_f64) as u8).to_be_bytes()[0];
+    be_bytes.extend(&mantissa_byte[1..]);
+    
 
     be_bytes
 }
