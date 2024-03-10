@@ -3,6 +3,7 @@ mod gds_model;
 mod gds_parser;
 mod gds_reader;
 mod gds_record;
+mod gds_writer;
 
 pub use gds_model::{Cell, Lib, Path, Polygon, Ref};
 

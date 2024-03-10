@@ -34,14 +34,14 @@ fn four_byte_int(byte: &[u8]) -> Result<Vec<i32>, Box<dyn Error>> {
 /// in gdsii stream file, eight byte real is defined as
 /// SEEEEEEE MMMMMMMM MMMMMMMM MMMMMMMM
 /// MMMMMMMM MMMMMMMM MMMMMMMM MMMMMMMM
-/// and value = (-1)^S*16^(E as i32 - 64)*(M as u64 /2^56)
-/// for short value = (-1)^S*2^(4*E as i32 - 312)*(M as u64)
+/// and value = (-1)^S*16^(E as u32 - 64)*(M as u64 /2^56)
+/// for short value = (-1)^S*2^(4*E as u32 - 312)*(M as u64)
 ///
 /// by the way double of IEEE 754 is defined as
 /// SEEEEEEE EEEEMMMM MMMMMMMM MMMMMMMM
 /// MMMMMMMM MMMMMMMM MMMMMMMM MMMMMMMM
-/// and value = (-1)^S*2^(E-1023)*(1+M/2^52)
-fn gdsii_eight_byte_real(byte: &[u8]) -> Result<f64, Box<dyn Error>> {
+/// and value = (-1)^S*2^(E as u32 -1023)*(1+M as u64/2^52)
+pub(crate) fn gdsii_eight_byte_real(byte: &[u8]) -> Result<f64, Box<dyn Error>> {
     if byte.len() != 8 {
         return Err(Box::new(gds_err(
             "transfer eight byte real failed: byte length != 8",
