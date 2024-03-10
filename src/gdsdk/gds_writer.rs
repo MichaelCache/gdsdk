@@ -1,5 +1,7 @@
 use std::vec::Vec;
 
+use super::gds_model::TextAnchor;
+
 pub fn ascii_string_to_be_bytes(s: &str) -> Vec<u8> {
     let mut be_bytes = Vec::<u8>::new();
     if !s.is_ascii() {
@@ -32,7 +34,6 @@ pub fn f64_to_gds_bytes(v: f64) -> Vec<u8> {
     // assemble binary
     be_bytes[0] |= ((exponent + 64_f64) as u8).to_be_bytes()[0];
     be_bytes.extend(&mantissa_byte[1..]);
-    
 
     be_bytes
 }
@@ -50,5 +51,19 @@ mod test_gds_writer {
         let gds_be_bytes = f64_to_gds_bytes(v);
         let fv = gds_reader::gdsii_eight_byte_real(&gds_be_bytes).unwrap();
         assert!(v.approx_eq(fv, F64Margin::default()));
+    }
+}
+
+pub fn text_anchor_to_gds_num(anchor: &TextAnchor) -> u16 {
+    match anchor {
+        TextAnchor::NW => 0,
+        TextAnchor::N => 1,
+        TextAnchor::NE => 2,
+        TextAnchor::W => 4,
+        TextAnchor::O => 5,
+        TextAnchor::E => 6,
+        TextAnchor::SW => 8,
+        TextAnchor::S => 9,
+        TextAnchor::SE => 10,
     }
 }

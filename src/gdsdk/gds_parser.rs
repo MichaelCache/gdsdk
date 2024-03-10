@@ -280,9 +280,11 @@ fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Ref, Box<dyn E
             Record::Points(points) => {
                 aref.origin = Points::new(points[0].0 as f64 * factor, points[0].1 as f64 * factor);
                 aref.spaceing_row =
-                    Points::new(points[1].0 as f64 * factor, points[1].1 as f64 * factor);
+                    Vector::new((points[2].0 as f64 * factor - aref.origin.x)/aref.row as f64, 
+                    (points[2].1 as f64 * factor-aref.origin.y)/aref.row as f64);
                 aref.spaceing_col =
-                    Points::new(points[2].0 as f64 * factor, points[2].1 as f64 * factor);
+                    Vector::new((points[1].0 as f64 * factor - aref.origin.x)/aref.column as f64, 
+                    (points[1].1 as f64 * factor- aref.origin.y)/aref.column as f64);
             }
             Record::EndElem => break,
             other => {
