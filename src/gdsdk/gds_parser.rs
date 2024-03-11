@@ -193,9 +193,10 @@ fn parse_polygon(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Polygon, Bo
             Record::Layer(l) => polygon.layer = *l,
             Record::DataType(d) => polygon.datatype = *d,
             Record::Points(points) => {
-                // gds polygon last points is same with first one, so pop it
-                polygon.points = i32_vec_2_pointvec(points, factor);
-                polygon.points.pop();
+                if let Some((_, elements)) = points.split_last() {
+                    // gds polygon last points is same with first one, so slice it
+                    polygon.points = i32_vec_2_pointvec(elements, factor);
+                }                
             }
             Record::EndElem => break,
             other => {
@@ -297,7 +298,7 @@ fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Ref, Box<dyn E
     Ok(aref)
 }
 
-fn i32_vec_2_pointvec(vec: &Vec<(i32, i32)>, factor: f64) -> Vec<Points> {
+fn i32_vec_2_pointvec(vec: &[(i32, i32)], factor: f64) -> Vec<Points> {
     vec.iter()
         .map(|&(x, y)| Points::new(x as f64 * factor, y as f64 * factor))
         .collect()
