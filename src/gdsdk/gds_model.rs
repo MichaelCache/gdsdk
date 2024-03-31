@@ -1,7 +1,6 @@
 use super::gds_record::{self, Date};
 use super::gds_writer::{self, *};
-use std::cell;
-use std::thread::panicking;
+use std::cell::RefCell;
 use std::{collections::HashMap, rc::Rc};
 
 #[derive(Default, Debug)]
@@ -9,28 +8,24 @@ pub struct Lib {
     pub name: String,
     pub units: f64, //in meter
     pub precision: f64,
-    pub cells: Vec<Rc<std::cell::RefCell<Cell>>>,
+    pub cells: Vec<Rc<RefCell<Cell>>>,
     pub date: Date,
 }
 
-fn get_cell_from_ref(refer: &Ref, uniqcells: &mut HashMap<String, Rc<std::cell::RefCell<Cell>>>) {
-    if let RefCell::Cell(c) = &refer.refed_cell {
-        let cell = (*(*c)).borrow();
-        if !uniqcells.contains_key(&cell.name) {
-            uniqcells.insert(cell.name.clone(), c.clone());
-        }
-        for r in &cell.refs {
-            get_cell_from_ref(r, uniqcells);
-        }
-    } else {
-        panic!("Reference should not refer cell by name");
+fn get_cell_from_ref(refer: &Ref, uniqcells: &mut HashMap<String, Rc<RefCell<Cell>>>) {
+    let cell = refer.refed_cell.borrow();
+    if !uniqcells.contains_key(&cell.name) {
+        uniqcells.insert(cell.name.clone(), refer.refed_cell.clone());
+    }
+    for r in &cell.refs {
+        get_cell_from_ref(r, uniqcells);
     }
 }
 
 impl Lib {
-    fn all_cells(&self) -> Vec<Rc<std::cell::RefCell<Cell>>> {
-        let mut uniqcells = HashMap::<String, Rc<std::cell::RefCell<Cell>>>::new();
-        let mut cells_vec = Vec::<Rc<std::cell::RefCell<Cell>>>::new();
+    fn all_cells(&self) -> Vec<Rc<RefCell<Cell>>> {
+        let mut uniqcells = HashMap::<String, Rc<RefCell<Cell>>>::new();
+        let mut cells_vec = Vec::<Rc<RefCell<Cell>>>::new();
         for c in &self.cells {
             let cell = (*(*c)).borrow();
             if !uniqcells.contains_key(&cell.name) {
@@ -207,7 +202,7 @@ impl GdsObject for Cell {
             data.extend(r.to_gds(scaling));
         });
 
-        self.label.iter().for_each(|l|{
+        self.label.iter().for_each(|l| {
             data.extend(l.to_gds(scaling));
         });
 
@@ -328,21 +323,9 @@ impl GdsObject for Path {
     }
 }
 
-#[derive(Debug)]
-pub enum RefCell {
-    Cell(Rc<std::cell::RefCell<Cell>>),
-    CellName(String),
-}
-
-impl Default for RefCell {
-    fn default() -> Self {
-        RefCell::CellName("".to_string())
-    }
-}
-
 #[derive(Default, Debug)]
 pub struct Ref {
-    pub(crate) refed_cell: RefCell,
+    pub(crate) refed_cell: Rc<RefCell<Cell>>,
     pub reflection_x: bool,
     // pub abs_magnific: bool,
     pub magnific: f64,
@@ -385,16 +368,13 @@ impl GdsObject for Ref {
         // refered cell name
         let mut cell_name = Vec::<u8>::new();
         cell_name.extend(gds_record::SNAME);
-        if let RefCell::Cell(cell_rc) = &self.refed_cell {
-            let cell = &*(cell_rc.borrow());
-            let mut name = ascii_string_to_be_bytes(&cell.name);
-            if !name.len().is_power_of_two() {
-                name.push(0);
-            }
-            cell_name.extend(name);
-        } else {
-            panic!("")
+
+        let cell = &*(self.refed_cell.borrow());
+        let mut name = ascii_string_to_be_bytes(&cell.name);
+        if !name.len().is_power_of_two() {
+            name.push(0);
         }
+        cell_name.extend(name);
 
         data.extend((cell_name.len() as i16 + 2_i16).to_be_bytes());
         data.extend(cell_name);
