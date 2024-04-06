@@ -70,8 +70,7 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
         }
     }
 
-    // step.2 connect reference to cell, only add cell not be refered to lib
-    let mut not_refered_cell = name_cell_map.clone();
+    // step.2 connect reference to cell,
     for c in cell_ref_cellname_map {
         let cur_cell_name = &c.0;
         let cur_cell = name_cell_map.get(cur_cell_name).unwrap().clone();
@@ -82,16 +81,13 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
             let ref_cell_name = &r.1;
             let refed_cell = name_cell_map.get(ref_cell_name).unwrap().clone();
             cell_ref.refed_cell = refed_cell;
-            // reverse not refered cell
-            if not_refered_cell.contains_key(ref_cell_name){
-                not_refered_cell.remove(ref_cell_name);
-            }
-            // cell add refs
+            // current cell add refs
             mut_cur_cell.refs.push(cell_ref);
         }
     }
 
-    for c in not_refered_cell{
+    // step.3 add all cell to lib
+    for c in name_cell_map{
         lib.cells.push(c.1);
     }
 

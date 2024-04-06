@@ -12,38 +12,36 @@ pub struct Lib {
     pub date: Date,
 }
 
-fn get_cell_from_ref(refer: &Ref, uniqcells: &mut HashMap<String, Rc<RefCell<Cell>>>) {
+fn get_cell_from_ref(refer: &Ref, uniqcells: &mut HashMap<String, Rc<RefCell<Cell>>>, depth: i64) {
     let cell = refer.refed_cell.borrow();
     if !uniqcells.contains_key(&cell.name) {
         uniqcells.insert(cell.name.clone(), refer.refed_cell.clone());
     }
     for r in &cell.refs {
-        get_cell_from_ref(r, uniqcells);
+        get_cell_from_ref(r, uniqcells, if depth > 0 { depth - 1 } else { depth });
     }
 }
 
 impl Lib {
-    fn all_cells(&self) -> Vec<Rc<RefCell<Cell>>> {
-        let mut uniqcells = HashMap::<String, Rc<RefCell<Cell>>>::new();
-        let mut cells_vec = Vec::<Rc<RefCell<Cell>>>::new();
-        for c in &self.cells {
-            let cell = (*(*c)).borrow();
-            if !uniqcells.contains_key(&cell.name) {
-                uniqcells.insert(cell.name.clone(), c.clone());
-            }
-            for r in &cell.refs {
-                get_cell_from_ref(r, &mut uniqcells);
-            }
-        }
-
-        for c in uniqcells {
-            cells_vec.push(c.1.clone());
-        }
-        cells_vec
-    }
-
     pub fn gds_bytes(&self) -> Vec<u8> {
         self.to_gds(0.0)
+    }
+
+    pub fn top_cells(&self) -> Vec<Rc<RefCell<Cell>>> {
+        let mut top_cell = Vec::<Rc<RefCell<Cell>>>::new(); // self.cells.clone();
+        let mut refed_cells = HashMap::<String, Rc<RefCell<Cell>>>::new();
+        for c in &self.cells[..] {
+            for refer in &c.borrow().refs[..] {
+                get_cell_from_ref(refer, &mut refed_cells, -1)
+            }
+        }
+        for ref c in &self.cells[..] {
+            if !refed_cells.contains_key(&c.borrow().name) {
+                top_cell.push((*c).clone());
+            }
+        }
+
+        top_cell
     }
 }
 
@@ -106,8 +104,7 @@ impl GdsObject for Lib {
         let scaling = self.units / self.precision;
 
         // cells
-        let all_cells = self.all_cells();
-        all_cells.iter().for_each(|c| {
+        self.cells.iter().for_each(|c| {
             let cell = (*c).borrow();
             data.extend(cell.to_gds(scaling));
         });
