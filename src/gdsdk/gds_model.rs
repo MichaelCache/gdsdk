@@ -557,3 +557,33 @@ pub struct Repetition {
 trait GdsObject {
     fn to_gds(&self, scaling: f64) -> Vec<u8>;
 }
+
+#[cfg(test)]
+mod test_gds_model {
+    use std::borrow::Borrow;
+
+    use super::*;
+    #[test]
+    fn test_lib_top_cell() {
+        let mut gds_lib = Lib::default();
+        let cell1 = Rc::new(RefCell::new(Cell::default()));
+        let cell2 = Rc::new(RefCell::new(Cell::default()));
+        let cell3 = Rc::new(RefCell::new(Cell::default()));
+        cell1.borrow_mut().name = String::from("cell1");
+        cell2.borrow_mut().name = String::from("cell2");
+        cell3.borrow_mut().name = String::from("cell3");
+        let mut ref3 = Ref::default();
+        let mut ref2 = Ref::default();
+        ref3.refed_cell = cell3.clone();
+        ref2.refed_cell = cell2.clone();
+        cell2.borrow_mut().refs.push(ref3);
+        cell1.borrow_mut().refs.push(ref2);
+        gds_lib.cells.push(cell1.clone());
+        gds_lib.cells.push(cell2);
+        gds_lib.cells.push(cell3);
+
+        let top_cell = gds_lib.top_cells();
+        assert_eq!(top_cell.len(), 1);
+        assert!(Rc::ptr_eq(&top_cell[0], &cell1));
+    }
+}
