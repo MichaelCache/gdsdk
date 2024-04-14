@@ -47,8 +47,9 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
                 lib.precision = *precision;
                 factor = *unit_in_meter;
             }
-            Record::BgnStr(_) => {
+            Record::BgnStr(date) => {
                 let (cell, cell_refs) = parse_cell(iter, factor)?;
+                cell.borrow_mut().date = date.clone();
                 let cell_name = cell.borrow().name.clone();
                 if name_cell_map.contains_key(&cell_name) {
                     return Err(Box::new(gds_err(&std::format!(
@@ -105,7 +106,7 @@ fn parse_cell(
         match record {
             Record::BgnStr(date) => mut_cell.date = date.clone(), // last modification time of a structure and marks the beginning of a structure
             Record::StrName(s) => mut_cell.name = s.to_string(),
-            Record::Boundary => {
+            Record::Boundary | Record::Box => {
                 let polygon = parse_polygon(iter, factor)?;
                 mut_cell.polygons.push(polygon);
             }
@@ -140,6 +141,7 @@ fn parse_cell(
 
 fn parse_text(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Text, Box<dyn Error>> {
     let mut text = Text::default();
+    let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
         match record {
             Record::Text => (), //marks the beginning of a text element
@@ -175,8 +177,9 @@ fn parse_text(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Text, Box<dyn 
                 }
             }
             Record::String(content) => text.text = content.clone(),
-            Record::MAG(mag) => text.magnification = *mag,
+            Record::Mag(mag) => text.magnification = *mag,
             Record::Angle(angle) => text.rotation = std::f64::consts::PI / 180.0 * angle,
+            // TODO:
             Record::RefTrans {
                 reflection_x,
                 ..
@@ -186,6 +189,16 @@ fn parse_text(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Text, Box<dyn 
             Record::Points(points) => {
                 text.position =
                     Points::new(points[0].0 as f64 * factor, points[0].1 as f64 * factor)
+            }
+            Record::PropAttr(key)=>cur_prokey = Some(*key),
+            Record::PropValue(value) => {
+                if let Some(key) = cur_prokey{
+                    text.property.insert(key, value.to_string());   
+                }else{
+                    return Err(Box::new(gds_err(&std::format!(
+                        "Text Property value \"{}\" have no key",
+                        &value))));
+                }
             }
             Record::EndElem => break,
             other => {
@@ -198,16 +211,27 @@ fn parse_text(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Text, Box<dyn 
 
 fn parse_polygon(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Polygon, Box<dyn Error>> {
     let mut polygon = Polygon::default();
+    let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
         match record {
             Record::Boundary => (), //marks the beginning of a boundary element
             Record::Layer(l) => polygon.layer = *l,
-            Record::DataType(d) => polygon.datatype = *d,
+            Record::DataType(d) | Record::BoxType(d)=> polygon.datatype = *d,
             Record::Points(points) => {
                 if let Some((_, elements)) = points.split_last() {
                     // gds polygon last points is same with first one, so slice it
                     polygon.points = i32_vec_2_pointvec(elements, factor);
                 }                
+            }
+            Record::PropAttr(key)=>cur_prokey = Some(*key),
+            Record::PropValue(value) => {
+                if let Some(key) = cur_prokey{
+                    polygon.property.insert(key, value.to_string());   
+                }else{
+                    return Err(Box::new(gds_err(&std::format!(
+                        "Polygon Property value \"{}\" have no key",
+                        &value))));
+                }
             }
             Record::EndElem => break,
             other => {
@@ -220,6 +244,7 @@ fn parse_polygon(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Polygon, Bo
 
 fn parse_path(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Path, Box<dyn Error>> {
     let mut path = Path::default();
+    let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
         match record {
             Record::Path => (), // marks the beginning of a path element
@@ -229,6 +254,16 @@ fn parse_path(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Path, Box<dyn 
             Record::PathType(t) => path.end_type = *t,
             Record::Points(points) => {
                 path.points = i32_vec_2_pointvec(points, factor);
+            }
+            Record::PropAttr(key)=>cur_prokey = Some(*key),
+            Record::PropValue(value) => {
+                if let Some(key) = cur_prokey{
+                    path.property.insert(key, value.to_string());   
+                }else{
+                    return Err(Box::new(gds_err(&std::format!(
+                        "Path Property value \"{}\" have no key",
+                        &value))));
+                }
             }
             Record::EndElem => break,
             other => {
@@ -242,6 +277,7 @@ fn parse_path(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Path, Box<dyn 
 fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String), Box<dyn Error>> {
     let mut sref = Ref::new();
     let mut ref_cell_name = String::new();
+    let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
         match record {
             Record::StrRef => (), // marks the beginning of an SREF(structure reference) element
@@ -256,10 +292,20 @@ fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String),
                 // sref.abs_magnific = *absolute_magnification;
                 // sref.abs_angel = *absolute_angle;
             }
-            Record::MAG(mag) => sref.magnific = *mag,
+            Record::Mag(mag) => sref.magnific = *mag,
             Record::Angle(angle) => sref.angle = std::f64::consts::PI / 180.0 * angle,
             Record::Points(points) => {
                 sref.origin = Points::new(points[0].0 as f64 * factor, points[0].1 as f64 * factor)
+            }
+            Record::PropAttr(key)=>cur_prokey = Some(*key),
+            Record::PropValue(value) => {
+                if let Some(key) = cur_prokey{
+                    sref.property.insert(key, value.to_string());   
+                }else{
+                    return Err(Box::new(gds_err(&std::format!(
+                        "Ref Property value \"{}\" have no key",
+                        &value))));
+                }
             }
             Record::EndElem => break,
             other => {
@@ -274,6 +320,7 @@ fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String),
 fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String), Box<dyn Error>> {
     let mut aref = Ref::new();
     let mut ref_cellname = String::new();
+    let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
         match record {
             Record::AryRef => (), // marks the beginning of an SREF(structure reference) element
@@ -288,9 +335,9 @@ fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String),
                 // aref.abs_magnific = *absolute_magnification;
                 // aref.abs_angel = *absolute_angle;
             }
-            Record::MAG(mag) => aref.magnific = *mag,
+            Record::Mag(mag) => aref.magnific = *mag,
             Record::Angle(angle) => aref.angle = std::f64::consts::PI / 180.0 * angle,
-            Record::COLROW { column, row } => {
+            Record::ColRow { column, row } => {
                 aref.column = *column;
                 aref.row = *row;
             }
@@ -302,6 +349,16 @@ fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String),
                 aref.spaceing_col =
                     Vector::new((points[1].0 as f64 * factor - aref.origin.x)/aref.column as f64, 
                     (points[1].1 as f64 * factor- aref.origin.y)/aref.column as f64);
+            }
+            Record::PropAttr(key)=>cur_prokey = Some(*key),
+            Record::PropValue(value) => {
+                if let Some(key) = cur_prokey{
+                    aref.property.insert(key, value.to_string());   
+                }else{
+                    return Err(Box::new(gds_err(&std::format!(
+                        "Ref Property value \"{}\" have no key",
+                        &value))));
+                }
             }
             Record::EndElem => break,
             other => {

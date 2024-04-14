@@ -30,8 +30,8 @@ pub const XY: &[u8] = &[0x10, 0x03];
 pub const ENDEL: &[u8] = &[0x11, 0x00];
 pub const SNAME: &[u8] = &[0x12, 0x06];
 pub const COLROW: &[u8] = &[0x13, 0x02];
-pub const TEXTNODE: &[u8] = &[0x14, 0x00];
-pub const NODE: &[u8] = &[0x15, 0x00];
+pub const TEXTNODE: &[u8] = &[0x14, 0x00]; // No Data Present (Not currently used)
+pub const NODE: &[u8] = &[0x15, 0x00]; // No Data Present
 pub const TEXTTYPE: &[u8] = &[0x16, 0x02];
 pub const PRESENTATION: &[u8] = &[0x17, 0x01];
 pub const SPACING: Option<&[u8]> = None; // Not currently used
@@ -58,8 +58,8 @@ pub const PROPVALUE: &[u8] = &[0x2c, 0x06];
 pub const BOX: &[u8] = &[0x2d, 0x00];
 pub const BOXTYPE: &[u8] = &[0x2e, 0x02];
 pub const PLEX: &[u8] = &[0x2f, 0x03];
-pub const BGNEXTN: &[u8] = &[0x30, 0x03];
-pub const ENDEXTN: &[u8] = &[0x31, 0x03];
+pub const BGNEXTN: &[u8] = &[0x30, 0x03]; //TODO:
+pub const ENDEXTN: &[u8] = &[0x31, 0x03]; // TODO:
 pub const TAPENUM: &[u8] = &[0x32, 0x03];
 pub const TAPECODE: &[u8] = &[0x33, 0x02];
 pub const STRCLASS: &[u8] = &[0x34, 0x01];
@@ -170,7 +170,7 @@ pub enum Record {
     Points(Vec<(i32, i32)>),
     EndElem,
     StrRefName(String),
-    COLROW {
+    ColRow {
         column: i16,
         row: i16,
     },
@@ -189,7 +189,7 @@ pub enum Record {
         absolute_magnification: bool,
         absolute_angle: bool,
     },
-    MAG(f64),
+    Mag(f64),
     Angle(f64),
     // UINTEGER,
     // USTRING,
@@ -207,8 +207,8 @@ pub enum Record {
     // NODETYPE,
     PropAttr(i16),
     PropValue(String),
-    // BOX,
-    // BOXTYPE,
+    Box,
+    BoxType(i16),
     // PLEX,
     // BGNEXTN,
     // ENDEXTN,

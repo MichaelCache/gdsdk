@@ -169,7 +169,7 @@ pub fn record_type(bytes: &[u8]) -> Result<Record, Box<dyn Error>> {
         SNAME => Ok(Record::StrRefName(ascii_string(data)?)),
         COLROW => {
             let nums = two_byte_int(data)?;
-            Ok(Record::COLROW {
+            Ok(Record::ColRow {
                 column: nums[0],
                 row: nums[1],
             })
@@ -229,7 +229,7 @@ pub fn record_type(bytes: &[u8]) -> Result<Record, Box<dyn Error>> {
             // test bit 14
             absolute_angle: if data[1] & 0x02 != 0 { true } else { false },
         }),
-        MAG => Ok(Record::MAG(eight_byte_real(data)?[0])),
+        MAG => Ok(Record::Mag(eight_byte_real(data)?[0])),
         ANGLE => Ok(Record::Angle(eight_byte_real(data)?[0])),
         // UINTEGER => Record::UINTEGER,
         // USTRING => Record::USTRING,
@@ -259,8 +259,11 @@ pub fn record_type(bytes: &[u8]) -> Result<Record, Box<dyn Error>> {
             }
             Ok(Record::PropValue(s))
         }
-        // BOX => Record::BOX,
-        // BOXTYPE => Record::BOXTYPE,
+        BOX => Ok(Record::Box),
+        BOXTYPE => {
+            let boxtype = two_byte_int(data)?[0];
+            Ok(Record::BoxType(boxtype))
+        }
         // PLEX => Record::PLEX,
         // BGNEXTN => Record::BGNEXTN,
         // ENDEXTN => Record::ENDEXTN,

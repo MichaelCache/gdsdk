@@ -6,8 +6,8 @@ use std::{collections::HashMap, rc::Rc};
 #[derive(Default, Debug)]
 pub struct Lib {
     pub name: String,
-    pub units: f64, //in meter
-    pub precision: f64,
+    pub units: f64,     //user units, in meter, points coord in this units
+    pub precision: f64, // database units, in meter, points float above precision part is valid
     pub cells: Vec<Rc<RefCell<Cell>>>,
     pub date: Date,
 }
@@ -219,6 +219,7 @@ pub struct Polygon {
     pub layer: i16,
     pub datatype: i16,
     pub points: Vec<Points>,
+    pub property: HashMap<i16, String>,
 }
 
 impl GdsObject for Polygon {
@@ -257,6 +258,24 @@ impl GdsObject for Polygon {
             data.extend((f64::round(self.points[0].y * scaling) as i32).to_be_bytes());
         }
 
+        // properties
+        for prop in &self.property {
+            data.extend(6_i16.to_be_bytes());
+            data.extend(gds_record::PROPATTR);
+            data.extend(prop.0.to_be_bytes());
+
+            let mut prop_value = Vec::<u8>::new();
+            prop_value.extend(gds_record::PROPVALUE);
+            let mut value = ascii_string_to_be_bytes(&prop.1);
+            if !value.len().is_power_of_two() {
+                value.push(0);
+            }
+            prop_value.extend(value);
+
+            data.extend((prop_value.len() as i16 + 2_i16).to_be_bytes());
+            data.extend(prop_value);
+        }
+
         // endelement
         data.extend(4_i16.to_be_bytes());
         data.extend(gds_record::ENDEL);
@@ -271,6 +290,7 @@ pub struct Path {
     pub width: f64,
     pub end_type: i16,
     pub points: Vec<Points>,
+    pub property: HashMap<i16, String>,
 }
 
 impl GdsObject for Path {
@@ -312,6 +332,24 @@ impl GdsObject for Path {
             data.extend((f64::round(y) as i32).to_be_bytes());
         });
 
+        // properties
+        for prop in &self.property {
+            data.extend(6_i16.to_be_bytes());
+            data.extend(gds_record::PROPATTR);
+            data.extend(prop.0.to_be_bytes());
+
+            let mut prop_value = Vec::<u8>::new();
+            prop_value.extend(gds_record::PROPVALUE);
+            let mut value = ascii_string_to_be_bytes(&prop.1);
+            if !value.len().is_power_of_two() {
+                value.push(0);
+            }
+            prop_value.extend(value);
+
+            data.extend((prop_value.len() as i16 + 2_i16).to_be_bytes());
+            data.extend(prop_value);
+        }
+
         // endel
         data.extend(4_i16.to_be_bytes());
         data.extend(gds_record::ENDEL);
@@ -333,6 +371,7 @@ pub struct Ref {
     pub column: i16,
     pub spaceing_row: Vector,
     pub spaceing_col: Vector,
+    pub property: HashMap<i16, String>,
 }
 
 impl Ref {
@@ -435,6 +474,24 @@ impl GdsObject for Ref {
             data.extend((f64::round(self.origin.y * scaling) as i32).to_be_bytes());
         }
 
+        // properties
+        for prop in &self.property {
+            data.extend(6_i16.to_be_bytes());
+            data.extend(gds_record::PROPATTR);
+            data.extend(prop.0.to_be_bytes());
+
+            let mut prop_value = Vec::<u8>::new();
+            prop_value.extend(gds_record::PROPVALUE);
+            let mut value = ascii_string_to_be_bytes(&prop.1);
+            if !value.len().is_power_of_two() {
+                value.push(0);
+            }
+            prop_value.extend(value);
+
+            data.extend((prop_value.len() as i16 + 2_i16).to_be_bytes());
+            data.extend(prop_value);
+        }
+
         // endel
         data.extend(4_u16.to_be_bytes());
         data.extend(gds_record::ENDEL);
@@ -484,10 +541,11 @@ pub struct Text {
     pub text: String,
     pub position: Points,
     pub anchor: TextAnchor,
-    pub rotation: f64,      // in radians
-    pub magnification: f64, // (not supported by OASIS)
-    pub x_reflection: bool, // (not supported by OASIS)
+    pub rotation: f64, // in radians
+    pub magnification: f64,
+    pub x_reflection: bool,
     pub repetition: Repetition,
+    pub property: HashMap<i16, String>,
 }
 
 impl GdsObject for Text {
@@ -539,6 +597,24 @@ impl GdsObject for Text {
         data.extend(gds_record::STRING);
         data.extend(text_data);
 
+        // properties
+        for prop in &self.property {
+            data.extend(6_i16.to_be_bytes());
+            data.extend(gds_record::PROPATTR);
+            data.extend(prop.0.to_be_bytes());
+
+            let mut prop_value = Vec::<u8>::new();
+            prop_value.extend(gds_record::PROPVALUE);
+            let mut value = ascii_string_to_be_bytes(&prop.1);
+            if !value.len().is_power_of_two() {
+                value.push(0);
+            }
+            prop_value.extend(value);
+
+            data.extend((prop_value.len() as i16 + 2_i16).to_be_bytes());
+            data.extend(prop_value);
+        }
+
         data.extend(4_u16.to_be_bytes());
         data.extend(gds_record::ENDEL);
 
@@ -560,8 +636,6 @@ trait GdsObject {
 
 #[cfg(test)]
 mod test_gds_model {
-    use std::borrow::Borrow;
-
     use super::*;
     #[test]
     fn test_lib_top_cell() {
