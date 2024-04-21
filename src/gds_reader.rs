@@ -1,5 +1,6 @@
 use super::gds_error::*;
 use super::gds_record::*;
+use std::error::Error;
 
 fn two_byte_int(byte: &[u8]) -> Result<Vec<i16>, Box<dyn Error>> {
     let byte_len = byte.len();

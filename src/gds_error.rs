@@ -1,11 +1,13 @@
-pub use std::error::Error;
+//! gds error type
+
+use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub struct GDSIIError {
     err: String,
 }
-
+/// create GDSIIError from str
 pub fn gds_err(err: &str) -> GDSIIError {
     GDSIIError {
         err: err.to_string(),

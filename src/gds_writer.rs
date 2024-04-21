@@ -38,22 +38,6 @@ pub fn f64_to_gds_bytes(v: f64) -> Vec<u8> {
     be_bytes
 }
 
-#[cfg(test)]
-mod test_gds_writer {
-    use crate::gdsdk::gds_reader;
-
-    use super::*;
-    use float_cmp::{ApproxEq, F64Margin};
-    #[test]
-    fn test_f64_to_gds_bytes() {
-        let v = 1.0e-9;
-
-        let gds_be_bytes = f64_to_gds_bytes(v);
-        let fv = gds_reader::gdsii_eight_byte_real(&gds_be_bytes).unwrap();
-        assert!(v.approx_eq(fv, F64Margin::default()));
-    }
-}
-
 pub fn text_anchor_to_gds_num(anchor: &TextAnchor) -> u16 {
     match anchor {
         TextAnchor::NW => 0,
@@ -65,5 +49,22 @@ pub fn text_anchor_to_gds_num(anchor: &TextAnchor) -> u16 {
         TextAnchor::SW => 8,
         TextAnchor::S => 9,
         TextAnchor::SE => 10,
+    }
+}
+
+#[cfg(test)]
+mod test_gds_writer {
+
+    use crate::gds_reader;
+
+    use super::*;
+    use float_cmp::{ApproxEq, F64Margin};
+    #[test]
+    fn test_f64_to_gds_bytes() {
+        let v = 1.0e-9;
+
+        let gds_be_bytes = f64_to_gds_bytes(v);
+        let fv = gds_reader::gdsii_eight_byte_real(&gds_be_bytes).unwrap();
+        assert!(v.approx_eq(fv, F64Margin::default()));
     }
 }

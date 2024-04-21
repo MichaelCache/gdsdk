@@ -1,10 +1,10 @@
+#![allow(unused)]
 // gdsii record format
 //
 //  Bit 0                                   16
 //      |  Total record length(in bytes)    |
 //      |  Record Type     |    Data Type   |
 //      |       Data content....            |
-
 use std::error::Error;
 
 use super::gds_error::gds_err;

@@ -1,7 +1,7 @@
-mod gdsdk;
-use std::{env, io::Write, process};
+use gdsdk;
+use std::{env, error::Error, io::Write, process};
 
-fn main() ->std::io::Result<()>{
+fn main() -> Result<(), Box<dyn Error>> {
     let mut args = env::args();
     args.next();
     if args.len() == 0 {
@@ -13,10 +13,9 @@ fn main() ->std::io::Result<()>{
             Ok(lib) => {
                 println!("{:#?}", lib);
                 // write gds data back
-                let gds_bytes = lib.gds_bytes();
+                let gds_bytes = lib.gds_bytes()?;
                 let mut file = std::fs::File::create("new.gds")?;
                 file.write(&gds_bytes)?;
-
             }
             Err(err) => eprintln!("parse file {} error: {}", file, err),
         }

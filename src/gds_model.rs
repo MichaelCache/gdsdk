@@ -1,15 +1,45 @@
+//! gds object class
+
 use super::gds_record::{self, Date};
 use super::gds_writer::{self, *};
+use crate::gds_error::gds_err;
 use std::cell::RefCell;
+use std::error::Error;
 use std::{collections::HashMap, rc::Rc};
 
-#[derive(Default, Debug)]
+/// Gds Library
+#[derive(Debug)]
 pub struct Lib {
+    /// Libraray name
     pub name: String,
-    pub units: f64,     //user units, in meter, points coord in this units
-    pub precision: f64, // database units, in meter, points float above precision part is valid
+    /// user units, in meter, points coord in this units，
+    ///
+    /// for example units is 10e-3,
+    /// witch is millimeter，a coord 1.32 means 1.32 millimeter
+    ///
+    /// default is 1e-6, micron
+    pub units: f64,
+    /// database units, in meter, gds file double value precision,
+    ///
+    /// for example
+    /// precision is 10e-9, and units is 10e-3, means 6 digit  
+    ///
+    /// default is 1e-9
+    pub precision: f64,
     pub cells: Vec<Rc<RefCell<Cell>>>,
     pub date: Date,
+}
+
+impl Default for Lib {
+    fn default() -> Self {
+        Lib {
+            name: String::default(),
+            units: 1e-6,
+            precision: 1e-9,
+            cells: Vec::<Rc<RefCell<Cell>>>::default(),
+            date: Date::default(),
+        }
+    }
 }
 
 fn get_cell_from_ref(refer: &Ref, uniqcells: &mut HashMap<String, Rc<RefCell<Cell>>>, depth: i64) {
@@ -23,10 +53,12 @@ fn get_cell_from_ref(refer: &Ref, uniqcells: &mut HashMap<String, Rc<RefCell<Cel
 }
 
 impl Lib {
-    pub fn gds_bytes(&self) -> Vec<u8> {
+    /// Dump Lib and recurse dump Lib's Cells to gds file bytes
+    pub fn gds_bytes(&self) -> Result<Vec<u8>, Box<dyn Error>> {
         self.to_gds(0.0)
     }
 
+    /// Get Cells not refered by any Ref
     pub fn top_cells(&self) -> Vec<Rc<RefCell<Cell>>> {
         let mut top_cell = Vec::<Rc<RefCell<Cell>>>::new(); // self.cells.clone();
         let mut refed_cells = HashMap::<String, Rc<RefCell<Cell>>>::new();
@@ -48,7 +80,7 @@ impl Lib {
 const GDS_VERSIOIN: i16 = 600;
 
 impl GdsObject for Lib {
-    fn to_gds(&self, _: f64) -> Vec<u8> {
+    fn to_gds(&self, _: f64) -> Result<Vec<u8>, Box<dyn Error>> {
         let mut data = Vec::<u8>::new();
 
         // gds data binary format is in big endian
@@ -103,11 +135,12 @@ impl GdsObject for Lib {
 
         let scaling = self.units / self.precision;
 
-        // cells
-        self.cells.iter().for_each(|c| {
-            let cell = (*c).borrow();
-            data.extend(cell.to_gds(scaling));
-        });
+        // dump cells
+        for ref_c in &self.cells {
+            let cell = ref_c.borrow();
+            let cell_bytes = cell.to_gds(scaling)?;
+            data.extend(cell_bytes);
+        }
 
         // endlib
         let mut endlib_data = Vec::<u8>::new();
@@ -115,10 +148,11 @@ impl GdsObject for Lib {
 
         data.extend((endlib_data.len() as i16 + 2_i16).to_be_bytes());
         data.extend(endlib_data);
-        data
+        Ok(data)
     }
 }
 
+/// geometry coord, in Lib units
 #[derive(Default, Debug)]
 pub struct Points {
     pub x: f64,
@@ -130,7 +164,7 @@ impl Points {
         Points { x, y }
     }
 }
-
+/// mathmatic vector
 #[derive(Default, Debug)]
 pub struct Vector {
     pub x: f64,
@@ -143,6 +177,7 @@ impl Vector {
     }
 }
 
+/// gds structure
 #[derive(Default, Debug)]
 pub struct Cell {
     pub name: String,
@@ -154,7 +189,7 @@ pub struct Cell {
 }
 
 impl GdsObject for Cell {
-    fn to_gds(&self, scaling: f64) -> Vec<u8> {
+    fn to_gds(&self, scaling: f64) -> Result<Vec<u8>, Box<dyn Error>> {
         let mut data = Vec::<u8>::new();
         // bgnstr and date
         let mut structure_data = Vec::<u8>::new();
@@ -187,21 +222,25 @@ impl GdsObject for Cell {
         data.extend((cell_name.len() as i16 + 2_i16).to_be_bytes());
         data.extend(cell_name);
 
-        self.polygons.iter().for_each(|p| {
-            data.extend(p.to_gds(scaling));
-        });
+        for p in &self.polygons {
+            let polygon_byte = p.to_gds(scaling)?;
+            data.extend(polygon_byte);
+        }
 
-        self.paths.iter().for_each(|p| {
-            data.extend(p.to_gds(scaling));
-        });
+        for p in &self.paths {
+            let path_byte = p.to_gds(scaling)?;
+            data.extend(path_byte);
+        }
 
-        self.refs.iter().for_each(|r| {
-            data.extend(r.to_gds(scaling));
-        });
+        for r in &self.refs {
+            let ref_byte = r.to_gds(scaling)?;
+            data.extend(ref_byte);
+        }
 
-        self.label.iter().for_each(|l| {
-            data.extend(l.to_gds(scaling));
-        });
+        for l in &self.label {
+            let ref_byte = l.to_gds(scaling)?;
+            data.extend(ref_byte);
+        }
 
         // endstr
         let mut endstr_data = Vec::<u8>::new();
@@ -210,7 +249,7 @@ impl GdsObject for Cell {
         data.extend((endstr_data.len() as i16 + 2_i16).to_be_bytes());
         data.extend(endstr_data);
 
-        data
+        Ok(data)
     }
 }
 
@@ -219,11 +258,12 @@ pub struct Polygon {
     pub layer: i16,
     pub datatype: i16,
     pub points: Vec<Points>,
+    /// gds property, key is int value, value is max 128 bytes length ASCII str
     pub property: HashMap<i16, String>,
 }
 
 impl GdsObject for Polygon {
-    fn to_gds(&self, scaling: f64) -> Vec<u8> {
+    fn to_gds(&self, scaling: f64) -> Result<Vec<u8>, Box<dyn Error>> {
         let mut data = Vec::<u8>::new();
 
         // boundary
@@ -242,7 +282,10 @@ impl GdsObject for Polygon {
 
         // points
         if self.points.len() > 8190 {
-            panic!("Gds polygons can not have points more than 8190");
+            gds_err(&format!(
+                "Gds polygons can not have points more than 8190 count:{:#?}",
+                &self
+            ));
         }
         // gds polygon points front is same as end
         data.extend((4_i16 + 8 * (self.points.len() + 1) as i16).to_be_bytes());
@@ -270,6 +313,12 @@ impl GdsObject for Polygon {
             if !value.len().is_power_of_two() {
                 value.push(0);
             }
+            if value.len() > 128 {
+                gds_err(&format!(
+                    "Gds Polygon property can not have ascii char more than 128 count:{:#?}",
+                    &self
+                ));
+            }
             prop_value.extend(value);
 
             data.extend((prop_value.len() as i16 + 2_i16).to_be_bytes());
@@ -279,7 +328,7 @@ impl GdsObject for Polygon {
         // endelement
         data.extend(4_i16.to_be_bytes());
         data.extend(gds_record::ENDEL);
-        data
+        Ok(data)
     }
 }
 
@@ -294,7 +343,7 @@ pub struct Path {
 }
 
 impl GdsObject for Path {
-    fn to_gds(&self, scaling: f64) -> Vec<u8> {
+    fn to_gds(&self, scaling: f64) -> Result<Vec<u8>, Box<dyn Error>> {
         let mut data = Vec::<u8>::new();
 
         // path
@@ -321,6 +370,12 @@ impl GdsObject for Path {
         data.extend(gds_record::WIDTH);
         data.extend((f64::round(self.width * scaling) as u32).to_be_bytes());
         // TODO: if end_type == 4, which means path end is in extend mode, need to export extend data
+        if self.end_type == 4 {
+            gds_err(&format!(
+                "end_type == 4 is not support for path now: {:#?}",
+                &self
+            ));
+        }
 
         // points
         data.extend((4_i16 + 8 * self.points.len() as i16).to_be_bytes());
@@ -344,6 +399,12 @@ impl GdsObject for Path {
             if !value.len().is_power_of_two() {
                 value.push(0);
             }
+            if value.len() > 128 {
+                gds_err(&format!(
+                    "Gds Path property can not have ascii char more than 128 count:{:#?}",
+                    &self
+                ));
+            }
             prop_value.extend(value);
 
             data.extend((prop_value.len() as i16 + 2_i16).to_be_bytes());
@@ -354,7 +415,7 @@ impl GdsObject for Path {
         data.extend(4_i16.to_be_bytes());
         data.extend(gds_record::ENDEL);
 
-        data
+        Ok(data)
     }
 }
 
@@ -385,7 +446,7 @@ impl Ref {
 }
 
 impl GdsObject for Ref {
-    fn to_gds(&self, scaling: f64) -> Vec<u8> {
+    fn to_gds(&self, scaling: f64) -> Result<Vec<u8>, Box<dyn Error>> {
         let mut data = Vec::<u8>::new();
 
         // sref or aref
@@ -486,6 +547,12 @@ impl GdsObject for Ref {
             if !value.len().is_power_of_two() {
                 value.push(0);
             }
+            if value.len() > 128 {
+                gds_err(&format!(
+                    "Gds Ref property can not have ascii char more than 128 count:{:#?}",
+                    &self
+                ));
+            }
             prop_value.extend(value);
 
             data.extend((prop_value.len() as i16 + 2_i16).to_be_bytes());
@@ -496,7 +563,7 @@ impl GdsObject for Ref {
         data.extend(4_u16.to_be_bytes());
         data.extend(gds_record::ENDEL);
 
-        data
+        Ok(data)
     }
 }
 
@@ -549,7 +616,7 @@ pub struct Text {
 }
 
 impl GdsObject for Text {
-    fn to_gds(&self, scaling: f64) -> Vec<u8> {
+    fn to_gds(&self, scaling: f64) -> Result<Vec<u8>, Box<dyn Error>> {
         let mut data = Vec::<u8>::new();
 
         data.extend(4_i16.to_be_bytes());
@@ -609,6 +676,12 @@ impl GdsObject for Text {
             if !value.len().is_power_of_two() {
                 value.push(0);
             }
+            if value.len() > 128 {
+                gds_err(&format!(
+                    "Gds Text property can not have ascii char more than 128 count:{:#?}",
+                    &self
+                ));
+            }
             prop_value.extend(value);
 
             data.extend((prop_value.len() as i16 + 2_i16).to_be_bytes());
@@ -618,7 +691,7 @@ impl GdsObject for Text {
         data.extend(4_u16.to_be_bytes());
         data.extend(gds_record::ENDEL);
 
-        data
+        Ok(data)
     }
 }
 
@@ -631,7 +704,7 @@ pub struct Repetition {
 }
 
 trait GdsObject {
-    fn to_gds(&self, scaling: f64) -> Vec<u8>;
+    fn to_gds(&self, scaling: f64) -> Result<Vec<u8>, Box<dyn Error>>;
 }
 
 #[cfg(test)]

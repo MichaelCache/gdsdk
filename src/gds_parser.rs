@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::slice::Iter;
+use std::error::Error;
 
 pub fn parse_gds(records: &[Record]) -> Result<Box<Lib>, Box<dyn Error>> {
     let mut lib: Box<Lib> = Box::new(Lib::default());
