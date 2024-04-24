@@ -26,20 +26,8 @@ pub struct Lib {
     ///
     /// default is 1e-9
     pub precision: f64,
-    pub cells: Vec<Rc<RefCell<Cell>>>,
+    pub(crate) cells: Vec<Rc<RefCell<Cell>>>,
     pub date: Date,
-}
-
-impl Default for Lib {
-    fn default() -> Self {
-        Lib {
-            name: String::default(),
-            units: 1e-6,
-            precision: 1e-9,
-            cells: Vec::<Rc<RefCell<Cell>>>::default(),
-            date: Date::default(),
-        }
-    }
 }
 
 fn get_cell_from_ref(refer: &Ref, uniqcells: &mut HashMap<String, Rc<RefCell<Cell>>>, depth: i64) {
@@ -53,9 +41,27 @@ fn get_cell_from_ref(refer: &Ref, uniqcells: &mut HashMap<String, Rc<RefCell<Cel
 }
 
 impl Lib {
-    /// Dump Lib and recurse dump Lib's Cells to gds file bytes
-    pub fn gds_bytes(&self) -> Result<Vec<u8>, Box<dyn Error>> {
-        self.to_gds(0.0)
+    pub fn new(libname: &str) -> Self {
+        Lib {
+            name: libname.to_string(),
+            units: 1e-6,
+            precision: 1e-9,
+            cells: Vec::<Rc<RefCell<Cell>>>::new(),
+            date: Date::now(),
+        }
+    }
+
+    /// recursely add cell to lib
+    ///
+    /// for example:
+    /// cell_a has a ref which refer to cell_b
+    ///
+    /// lib.add_cell(cell_a) will also add cell_b
+    pub fn add_cell(&mut self, cell: Rc<RefCell<Cell>>) {
+        for r in &cell.borrow().refs {
+            self.add_cell(r.refed_cell.clone());
+        }
+        self.cells.push(cell);
     }
 
     /// Get Cells not refered by any Ref
@@ -74,6 +80,11 @@ impl Lib {
         }
 
         top_cell
+    }
+
+    /// Dump Lib and recurse dump Lib's Cells to gds file bytes
+    pub fn gds_bytes(&self) -> Result<Vec<u8>, Box<dyn Error>> {
+        self.to_gds(0.0)
     }
 }
 
@@ -177,8 +188,8 @@ impl Vector {
     }
 }
 
-/// gds structure
-#[derive(Default, Debug)]
+/// Gds Structure
+#[derive(Debug)]
 pub struct Cell {
     pub name: String,
     pub polygons: Vec<Polygon>,
@@ -186,6 +197,19 @@ pub struct Cell {
     pub refs: Vec<Ref>,
     pub label: Vec<Text>,
     pub date: Date,
+}
+
+impl Cell {
+    pub fn new(cellname: &str) -> Self {
+        Cell {
+            name: cellname.to_string(),
+            polygons: Vec::<Polygon>::new(),
+            paths: Vec::<Path>::new(),
+            refs: Vec::<Ref>::new(),
+            label: Vec::<Text>::new(),
+            date: Date::now(),
+        }
+    }
 }
 
 impl GdsObject for Cell {
@@ -332,6 +356,7 @@ impl GdsObject for Polygon {
     }
 }
 
+/// Gds Path
 #[derive(Default, Debug)]
 pub struct Path {
     pub layer: i16,
@@ -419,9 +444,11 @@ impl GdsObject for Path {
     }
 }
 
-#[derive(Default, Debug)]
+/// Gds ArrayRef or StructurRef
+/// refer Gds Structure
+#[derive(Debug)]
 pub struct Ref {
-    pub(crate) refed_cell: Rc<RefCell<Cell>>,
+    pub refed_cell: Rc<RefCell<Cell>>,
     pub reflection_x: bool,
     // pub abs_magnific: bool,
     pub magnific: f64,
@@ -436,11 +463,18 @@ pub struct Ref {
 }
 
 impl Ref {
-    pub fn new() -> Self {
+    pub fn new(refto: Rc<RefCell<Cell>>) -> Self {
         Ref {
+            refed_cell: refto,
             reflection_x: false,
             magnific: 1.0,
-            ..Default::default()
+            angle: 0.0,
+            origin: Points::new(0.0, 0.0),
+            row: 0,
+            column: 0,
+            spaceing_row: Vector { x: 0.0, y: 0.0 },
+            spaceing_col: Vector { x: 0.0, y: 0.0 },
+            property: HashMap::<i16, String>::new(),
         }
     }
 }
@@ -712,17 +746,12 @@ mod test_gds_model {
     use super::*;
     #[test]
     fn test_lib_top_cell() {
-        let mut gds_lib = Lib::default();
-        let cell1 = Rc::new(RefCell::new(Cell::default()));
-        let cell2 = Rc::new(RefCell::new(Cell::default()));
-        let cell3 = Rc::new(RefCell::new(Cell::default()));
-        cell1.borrow_mut().name = String::from("cell1");
-        cell2.borrow_mut().name = String::from("cell2");
-        cell3.borrow_mut().name = String::from("cell3");
-        let mut ref3 = Ref::default();
-        let mut ref2 = Ref::default();
-        ref3.refed_cell = cell3.clone();
-        ref2.refed_cell = cell2.clone();
+        let mut gds_lib = Lib::new("test");
+        let cell1 = Rc::new(RefCell::new(Cell::new("cell1")));
+        let cell2 = Rc::new(RefCell::new(Cell::new("cell2")));
+        let cell3 = Rc::new(RefCell::new(Cell::new("cell3")));
+        let ref3 = Ref::new(cell3.clone());
+        let ref2 = Ref::new(cell2.clone());
         cell2.borrow_mut().refs.push(ref3);
         cell1.borrow_mut().refs.push(ref2);
         gds_lib.cells.push(cell1.clone());

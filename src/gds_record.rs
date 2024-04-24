@@ -5,7 +5,8 @@
 //      |  Total record length(in bytes)    |
 //      |  Record Type     |    Data Type   |
 //      |       Data content....            |
-use std::error::Error;
+use chrono::{DateTime, Datelike, Timelike, Utc};
+use std::{error::Error, time::SystemTime};
 
 use super::gds_error::gds_err;
 
@@ -120,6 +121,53 @@ pub struct Date {
 }
 
 impl Date {
+    pub fn new() -> Self {
+        Date {
+            mod_year: i16::default(),
+            mod_month: i16::default(),
+            mod_day: i16::default(),
+            mod_hour: i16::default(),
+            mod_minute: i16::default(),
+            mod_second: i16::default(),
+            acc_year: i16::default(),
+            acc_month: i16::default(),
+            acc_day: i16::default(),
+            acc_hour: i16::default(),
+            acc_minute: i16::default(),
+            acc_second: i16::default(),
+        }
+    }
+
+    pub fn now() -> Self {
+        let now = SystemTime::now();
+        let utc: DateTime<Utc> = now.into();
+
+        // year, month, day
+        let year = utc.year() as i16;
+        let month = utc.month() as i16;
+        let day = utc.day() as i16;
+
+        // hour, minute, second
+        let hour = utc.hour() as i16;
+        let minute = utc.minute() as i16;
+        let second = utc.second() as i16;
+
+        Date {
+            mod_year: year,
+            mod_month: month,
+            mod_day: day,
+            mod_hour: hour,
+            mod_minute: minute,
+            mod_second: second,
+            acc_year: year,
+            acc_month: month,
+            acc_day: day,
+            acc_hour: hour,
+            acc_minute: minute,
+            acc_second: second,
+        }
+    }
+
     pub fn from_i16_array(date: &[i16]) -> Result<Date, Box<dyn Error>> {
         if date.len() < 12 {
             return Err(Box::new(gds_err(

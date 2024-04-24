@@ -9,22 +9,25 @@ use std::slice::Iter;
 use std::error::Error;
 
 pub fn parse_gds(records: &[Record]) -> Result<Box<Lib>, Box<dyn Error>> {
-    let mut lib: Box<Lib> = Box::new(Lib::default());
+    // let mut lib: Box<Lib> = Box::new(Lib::new(""));
     let mut iter = records.iter();
     while let Some(record) = iter.next() {
         match record {
             Record::Header { version: _ } => {}
-            Record::BgnLib(_) => lib = parse_lib(&mut iter)?,
+            Record::BgnLib(_) =>{
+                let lib = parse_lib(&mut iter)?;
+                return Ok(lib);
+            }
             Record::EndLib => {}
             _ => return Err(Box::new(gds_err("not valid gds lib"))),
         }
     }
 
-    Ok(lib)
+    return Err( Box::new(gds_err("no valid gds lib found")));
 }
 
 fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
-    let mut lib = Box::new(Lib::default());
+    let mut lib = Box::new(Lib::new(""));
     let mut factor = 0.0;
     let mut name_cell_map = HashMap::new();
     let mut cell_ref_cellname_map =HashMap::<String, Vec::<(gds_model::Ref, String)>>::new();
@@ -100,7 +103,7 @@ fn parse_cell(
     iter: &mut Iter<'_, Record>,
     factor: f64
 ) -> Result<(Rc<RefCell<Cell>>,Vec::<(gds_model::Ref, String)>), Box<dyn Error>> {
-    let cell = Rc::new(RefCell::new(Cell::default()));
+    let cell = Rc::new(RefCell::new(Cell::new("")));
     let mut mut_cell = cell.borrow_mut();
     let mut ref_refname = Vec::<(gds_model::Ref, String)>::new();
     while let Some(record) = iter.next() {
@@ -276,7 +279,8 @@ fn parse_path(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Path, Box<dyn 
 }
 
 fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String), Box<dyn Error>> {
-    let mut sref = Ref::new();
+    let tmp_cell = Rc::<RefCell<Cell>>::new(RefCell::new( Cell::new("temp_cell")));
+    let mut sref = Ref::new(tmp_cell);
     let mut ref_cell_name = String::new();
     let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
@@ -319,7 +323,8 @@ fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String),
 }
 
 fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String), Box<dyn Error>> {
-    let mut aref = Ref::new();
+    let tmp_cell = Rc::<RefCell<Cell>>::new(RefCell::new( Cell::new("temp_cell")));
+    let mut aref = Ref::new(tmp_cell);
     let mut ref_cellname = String::new();
     let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
