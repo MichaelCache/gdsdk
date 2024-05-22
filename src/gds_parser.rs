@@ -29,9 +29,9 @@ pub fn parse_gds(records: &[Record]) -> Result<Box<Lib>, Box<dyn Error>> {
 fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
     let mut lib = Box::new(Lib::new(""));
     let mut factor = 0.0;
-    let mut name_cell_map = HashMap::new();
-    let mut cell_ref_cellname_map =HashMap::<String, Vec::<(gds_model::Ref, String)>>::new();
-    // step.1 parse all cell, save to name_cell_map
+    let mut name_struc_map = HashMap::new();
+    let mut struc_ref_strucname_map =HashMap::<String, Vec::<(gds_model::Ref, String)>>::new();
+    // step.1 parse all stuc, save to name_stuc_map
     while let Some(record) = iter.next() {
         match record {
             Record::BgnLib(date) => lib.date = date.clone(), //modification time of lib, and marks beginning of library
@@ -52,19 +52,19 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
                 factor = *unit_in_meter;
             }
             Record::BgnStr(date) => {
-                let (cell, cell_refs) = parse_cell(iter, factor)?;
-                cell.borrow_mut().date = date.clone();
-                let cell_name = cell.borrow().name.clone();
-                if name_cell_map.contains_key(&cell_name) {
+                let (struc, struc_refs) = parse_struc(iter, factor)?;
+                struc.borrow_mut().date = date.clone();
+                let struc_name = struc.borrow().name.clone();
+                if name_struc_map.contains_key(&struc_name) {
                     return Err(Box::new(gds_err(&std::format!(
-                        "Duplicated Cell \"{}\" found",
-                        &cell_name
+                        "Duplicated gds Structure \"{}\" found",
+                        &struc_name
                     ))));
                 }
-                let cell_name_cp = cell_name.clone();
-                name_cell_map.insert(cell_name, cell);
+                let struc_name_cp = struc_name.clone();
+                name_struc_map.insert(struc_name, struc);
 
-                cell_ref_cellname_map.insert(cell_name_cp, cell_refs);
+                struc_ref_strucname_map.insert(struc_name_cp, struc_refs);
             }
             Record::EndLib => {
                 break;
@@ -75,72 +75,72 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
         }
     }
 
-    // step.2 connect reference to cell,
-    for c in cell_ref_cellname_map {
-        let cur_cell_name = &c.0;
-        let cur_cell = name_cell_map.get(cur_cell_name).unwrap().clone();
-        let mut mut_cur_cell = cur_cell.borrow_mut();
+    // step.2 connect reference to struc,
+    for c in struc_ref_strucname_map {
+        let cur_struc_name = &c.0;
+        let cur_struc = name_struc_map.get(cur_struc_name).unwrap().clone();
+        let mut mut_cur_struc = cur_struc.borrow_mut();
         for r in c.1{
-            // ref refer to cell
-            let mut cell_ref = r.0;
-            let ref_cell_name = &r.1;
-            let refed_cell = name_cell_map.get(ref_cell_name).unwrap().clone();
-            cell_ref.refed_cell = refed_cell;
-            // current cell add refs
-            mut_cur_cell.refs.push(cell_ref);
+            // ref refer to struc
+            let mut struc_ref = r.0;
+            let ref_struc_name = &r.1;
+            let refed_struc = name_struc_map.get(ref_struc_name).unwrap().clone();
+            struc_ref.refed_struc = refed_struc;
+            // current struc add refs
+            mut_cur_struc.refs.push(struc_ref);
         }
     }
 
-    // step.3 add all cell to lib
-    for c in name_cell_map{
-        lib.cells.push(c.1);
+    // step.3 add all struc to lib
+    for c in name_struc_map{
+        lib.strucs.push(c.1);
     }
 
     Ok(lib)
 }
 
-fn parse_cell(
+fn parse_struc(
     iter: &mut Iter<'_, Record>,
     factor: f64
-) -> Result<(Rc<RefCell<Cell>>,Vec::<(gds_model::Ref, String)>), Box<dyn Error>> {
-    let cell = Rc::new(RefCell::new(Cell::new("")));
-    let mut mut_cell = cell.borrow_mut();
+) -> Result<(Rc<RefCell<Struc>>,Vec::<(gds_model::Ref, String)>), Box<dyn Error>> {
+    let struc = Rc::new(RefCell::new(Struc::new("")));
+    let mut mut_struc = struc.borrow_mut();
     let mut ref_refname = Vec::<(gds_model::Ref, String)>::new();
     while let Some(record) = iter.next() {
         match record {
-            Record::BgnStr(date) => mut_cell.date = date.clone(), // last modification time of a structure and marks the beginning of a structure
-            Record::StrName(s) => mut_cell.name = s.to_string(),
+            Record::BgnStr(date) => mut_struc.date = date.clone(), // last modification time of a structure and marks the beginning of a structure
+            Record::StrName(s) => mut_struc.name = s.to_string(),
             Record::Boundary | Record::Box => {
                 let polygon = parse_polygon(iter, factor)?;
-                mut_cell.polygons.push(polygon);
+                mut_struc.polygons.push(polygon);
             }
             Record::Path => {
                 let path = parse_path(iter, factor)?;
-                mut_cell.paths.push(path);
+                mut_struc.paths.push(path);
             }
             Record::StrRef => {
-                let (sref, ref_cellname) = parse_sref(iter, factor)?;
-                ref_refname.push((sref, ref_cellname));
+                let (sref, ref_strucname) = parse_sref(iter, factor)?;
+                ref_refname.push((sref, ref_strucname));
             }
             Record::Text => {
                 let text = parse_text(iter, factor)?;
-                mut_cell.label.push(text)
+                mut_struc.label.push(text)
             }
             Record::AryRef => {
-                let (aref, ref_cellname)  = parse_aref(iter, factor)?;
-                ref_refname.push((aref, ref_cellname));
+                let (aref, ref_strucname)  = parse_aref(iter, factor)?;
+                ref_refname.push((aref, ref_strucname));
             }
             Record::EndStr => {
                 break;
             }
             other => {
-                println!("get record from cell {:#?}", other);
+                println!("get record from struc {:#?}", other);
             }
         }
     }
-    std::mem::drop(mut_cell);
+    std::mem::drop(mut_struc);
 
-    Ok((cell, ref_refname))
+    Ok((struc, ref_refname))
 }
 
 fn parse_text(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Text, Box<dyn Error>> {
@@ -279,14 +279,14 @@ fn parse_path(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Path, Box<dyn 
 }
 
 fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String), Box<dyn Error>> {
-    let tmp_cell = Rc::<RefCell<Cell>>::new(RefCell::new( Cell::new("temp_cell")));
-    let mut sref = Ref::new(tmp_cell);
-    let mut ref_cell_name = String::new();
+    let tmp_struc = Rc::<RefCell<Struc>>::new(RefCell::new( Struc::new("temp")));
+    let mut sref = Ref::new(tmp_struc);
+    let mut ref_struc_name = String::new();
     let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
         match record {
             Record::StrRef => (), // marks the beginning of an SREF(structure reference) element
-            Record::StrRefName(s) => ref_cell_name = s.to_string(),
+            Record::StrRefName(s) => ref_struc_name = s.to_string(),
             Record::RefTrans {
                 reflection_x,
                 ..
@@ -318,19 +318,18 @@ fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String),
             }
         }
     }
-    // ref_map.insert(ref_cell_name, &mut sref);
-    Ok((sref,ref_cell_name))
+    Ok((sref,ref_struc_name))
 }
 
 fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String), Box<dyn Error>> {
-    let tmp_cell = Rc::<RefCell<Cell>>::new(RefCell::new( Cell::new("temp_cell")));
-    let mut aref = Ref::new(tmp_cell);
-    let mut ref_cellname = String::new();
+    let tmp_struc = Rc::<RefCell<Struc>>::new(RefCell::new( Struc::new("temp")));
+    let mut aref = Ref::new(tmp_struc);
+    let mut ref_strucname = String::new();
     let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
         match record {
             Record::AryRef => (), // marks the beginning of an SREF(structure reference) element
-            Record::StrRefName(s) =>ref_cellname=s.to_string(),
+            Record::StrRefName(s) =>ref_strucname=s.to_string(),
             Record::RefTrans {
                 reflection_x,
                 ..
@@ -372,7 +371,7 @@ fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String),
             }
         }
     }
-    Ok((aref, ref_cellname))
+    Ok((aref, ref_strucname))
 }
 
 fn i32_vec_2_pointvec(vec: &[(i32, i32)], factor: f64) -> Vec<Points> {

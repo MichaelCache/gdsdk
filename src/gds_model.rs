@@ -26,17 +26,21 @@ pub struct Lib {
     ///
     /// default is 1e-9
     pub precision: f64,
-    pub(crate) cells: Vec<Rc<RefCell<Cell>>>,
+    pub(crate) strucs: Vec<Rc<RefCell<Struc>>>,
     pub date: Date,
 }
 
-fn get_cell_from_ref(refer: &Ref, uniqcells: &mut HashMap<String, Rc<RefCell<Cell>>>, depth: i64) {
-    let cell = refer.refed_cell.borrow();
-    if !uniqcells.contains_key(&cell.name) {
-        uniqcells.insert(cell.name.clone(), refer.refed_cell.clone());
+fn get_struc_from_ref(
+    refer: &Ref,
+    uniq_strucs: &mut HashMap<String, Rc<RefCell<Struc>>>,
+    depth: i64,
+) {
+    let struc = refer.refed_struc.borrow();
+    if !uniq_strucs.contains_key(&struc.name) {
+        uniq_strucs.insert(struc.name.clone(), refer.refed_struc.clone());
     }
-    for r in &cell.refs {
-        get_cell_from_ref(r, uniqcells, if depth > 0 { depth - 1 } else { depth });
+    for r in &struc.refs {
+        get_struc_from_ref(r, uniq_strucs, if depth > 0 { depth - 1 } else { depth });
     }
 }
 
@@ -46,43 +50,43 @@ impl Lib {
             name: libname.to_string(),
             units: 1e-6,
             precision: 1e-9,
-            cells: Vec::<Rc<RefCell<Cell>>>::new(),
+            strucs: Vec::<Rc<RefCell<Struc>>>::new(),
             date: Date::now(),
         }
     }
 
-    /// recursely add cell to lib
+    /// recursely add gds struc to lib
     ///
     /// for example:
-    /// cell_a has a ref which refer to cell_b
+    /// struc_a has a ref which refer to struc_b
     ///
-    /// lib.add_cell(cell_a) will also add cell_b
-    pub fn add_cell(&mut self, cell: Rc<RefCell<Cell>>) {
-        for r in &cell.borrow().refs {
-            self.add_cell(r.refed_cell.clone());
+    /// lib.add_struc(struc_a) will also add struc_b
+    pub fn add_struc(&mut self, struc: Rc<RefCell<Struc>>) {
+        for r in &struc.borrow().refs {
+            self.add_struc(r.refed_struc.clone());
         }
-        self.cells.push(cell);
+        self.strucs.push(struc);
     }
 
-    /// Get Cells not refered by any Ref
-    pub fn top_cells(&self) -> Vec<Rc<RefCell<Cell>>> {
-        let mut top_cell = Vec::<Rc<RefCell<Cell>>>::new(); // self.cells.clone();
-        let mut refed_cells = HashMap::<String, Rc<RefCell<Cell>>>::new();
-        for c in &self.cells[..] {
+    /// Get Strucs not refered by any Ref
+    pub fn top_strucs(&self) -> Vec<Rc<RefCell<Struc>>> {
+        let mut top_struc = Vec::<Rc<RefCell<Struc>>>::new(); // self.strucs.clone();
+        let mut refed_strucs = HashMap::<String, Rc<RefCell<Struc>>>::new();
+        for c in &self.strucs[..] {
             for refer in &c.borrow().refs[..] {
-                get_cell_from_ref(refer, &mut refed_cells, -1)
+                get_struc_from_ref(refer, &mut refed_strucs, -1)
             }
         }
-        for ref c in &self.cells[..] {
-            if !refed_cells.contains_key(&c.borrow().name) {
-                top_cell.push((*c).clone());
+        for ref c in &self.strucs[..] {
+            if !refed_strucs.contains_key(&c.borrow().name) {
+                top_struc.push((*c).clone());
             }
         }
 
-        top_cell
+        top_struc
     }
 
-    /// Dump Lib and recurse dump Lib's Cells to gds file bytes
+    /// Dump Lib and recurse dump Lib's Strucs to gds file bytes
     pub fn gds_bytes(&self) -> Result<Vec<u8>, Box<dyn Error>> {
         self.to_gds(0.0)
     }
@@ -146,11 +150,11 @@ impl GdsObject for Lib {
 
         let scaling = self.units / self.precision;
 
-        // dump cells
-        for ref_c in &self.cells {
-            let cell = ref_c.borrow();
-            let cell_bytes = cell.to_gds(scaling)?;
-            data.extend(cell_bytes);
+        // dump strucs
+        for ref_c in &self.strucs {
+            let struc = ref_c.borrow();
+            let struc_bytes = struc.to_gds(scaling)?;
+            data.extend(struc_bytes);
         }
 
         // endlib
@@ -190,7 +194,7 @@ impl Vector {
 
 /// Gds Structure
 #[derive(Debug)]
-pub struct Cell {
+pub struct Struc {
     pub name: String,
     pub polygons: Vec<Polygon>,
     pub paths: Vec<Path>,
@@ -199,10 +203,10 @@ pub struct Cell {
     pub date: Date,
 }
 
-impl Cell {
-    pub fn new(cellname: &str) -> Self {
-        Cell {
-            name: cellname.to_string(),
+impl Struc {
+    pub fn new(name: &str) -> Self {
+        Struc {
+            name: name.to_string(),
             polygons: Vec::<Polygon>::new(),
             paths: Vec::<Path>::new(),
             refs: Vec::<Ref>::new(),
@@ -212,7 +216,7 @@ impl Cell {
     }
 }
 
-impl GdsObject for Cell {
+impl GdsObject for Struc {
     fn to_gds(&self, scaling: f64) -> Result<Vec<u8>, Box<dyn Error>> {
         let mut data = Vec::<u8>::new();
         // bgnstr and date
@@ -234,17 +238,17 @@ impl GdsObject for Cell {
         data.extend((structure_data.len() as i16 + 2_i16).to_be_bytes());
         data.extend(structure_data);
 
-        // cell name
-        let mut cell_name = Vec::<u8>::new();
-        cell_name.extend(gds_record::STRNAME);
+        // gds struc name
+        let mut struc_name = Vec::<u8>::new();
+        struc_name.extend(gds_record::STRNAME);
         let mut name = ascii_string_to_be_bytes(&self.name);
         if !name.len().is_power_of_two() {
             name.push(0);
         }
-        cell_name.extend(name);
+        struc_name.extend(name);
 
-        data.extend((cell_name.len() as i16 + 2_i16).to_be_bytes());
-        data.extend(cell_name);
+        data.extend((struc_name.len() as i16 + 2_i16).to_be_bytes());
+        data.extend(struc_name);
 
         for p in &self.polygons {
             let polygon_byte = p.to_gds(scaling)?;
@@ -448,7 +452,7 @@ impl GdsObject for Path {
 /// refer Gds Structure
 #[derive(Debug)]
 pub struct Ref {
-    pub refed_cell: Rc<RefCell<Cell>>,
+    pub refed_struc: Rc<RefCell<Struc>>,
     pub reflection_x: bool,
     // pub abs_magnific: bool,
     pub magnific: f64,
@@ -463,9 +467,9 @@ pub struct Ref {
 }
 
 impl Ref {
-    pub fn new(refto: Rc<RefCell<Cell>>) -> Self {
+    pub fn new(refto: Rc<RefCell<Struc>>) -> Self {
         Ref {
-            refed_cell: refto,
+            refed_struc: refto,
             reflection_x: false,
             magnific: 1.0,
             angle: 0.0,
@@ -496,19 +500,19 @@ impl GdsObject for Ref {
             data.extend(gds_record::SREF);
         }
 
-        // refered cell name
-        let mut cell_name = Vec::<u8>::new();
-        cell_name.extend(gds_record::SNAME);
+        // refered gds structure name
+        let mut struc_name = Vec::<u8>::new();
+        struc_name.extend(gds_record::SNAME);
 
-        let cell = &*(self.refed_cell.borrow());
-        let mut name = ascii_string_to_be_bytes(&cell.name);
+        let struc = &*(self.refed_struc.borrow());
+        let mut name = ascii_string_to_be_bytes(&struc.name);
         if !name.len().is_power_of_two() {
             name.push(0);
         }
-        cell_name.extend(name);
+        struc_name.extend(name);
 
-        data.extend((cell_name.len() as i16 + 2_i16).to_be_bytes());
-        data.extend(cell_name);
+        data.extend((struc_name.len() as i16 + 2_i16).to_be_bytes());
+        data.extend(struc_name);
 
         // strans
         data.extend(6_i16.to_be_bytes());
@@ -745,21 +749,21 @@ trait GdsObject {
 mod test_gds_model {
     use super::*;
     #[test]
-    fn test_lib_top_cell() {
+    fn test_lib_top_struc() {
         let mut gds_lib = Lib::new("test");
-        let cell1 = Rc::new(RefCell::new(Cell::new("cell1")));
-        let cell2 = Rc::new(RefCell::new(Cell::new("cell2")));
-        let cell3 = Rc::new(RefCell::new(Cell::new("cell3")));
-        let ref3 = Ref::new(cell3.clone());
-        let ref2 = Ref::new(cell2.clone());
-        cell2.borrow_mut().refs.push(ref3);
-        cell1.borrow_mut().refs.push(ref2);
-        gds_lib.cells.push(cell1.clone());
-        gds_lib.cells.push(cell2);
-        gds_lib.cells.push(cell3);
+        let struc1 = Rc::new(RefCell::new(Struc::new("cell1")));
+        let struc2 = Rc::new(RefCell::new(Struc::new("cell2")));
+        let struc3 = Rc::new(RefCell::new(Struc::new("cell3")));
+        let ref3 = Ref::new(struc3.clone());
+        let ref2 = Ref::new(struc2.clone());
+        struc2.borrow_mut().refs.push(ref3);
+        struc1.borrow_mut().refs.push(ref2);
+        gds_lib.strucs.push(struc1.clone());
+        gds_lib.strucs.push(struc2);
+        gds_lib.strucs.push(struc3);
 
-        let top_cell = gds_lib.top_cells();
-        assert_eq!(top_cell.len(), 1);
-        assert!(Rc::ptr_eq(&top_cell[0], &cell1));
+        let top_struc = gds_lib.top_strucs();
+        assert_eq!(top_struc.len(), 1);
+        assert!(Rc::ptr_eq(&top_struc[0], &struc1));
     }
 }
