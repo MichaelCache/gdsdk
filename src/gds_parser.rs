@@ -30,7 +30,7 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
     let mut lib = Box::new(Lib::new(""));
     let mut factor = 0.0;
     let mut name_struc_map = HashMap::new();
-    let mut struc_ref_strucname_map =HashMap::<String, Vec::<(gds_model::Ref, String)>>::new();
+    let mut struc_ref_strucname_map =HashMap::<String, Vec::<gds_model::FakeRef>>::new();
     // step.1 parse all stuc, save to name_stuc_map
     while let Some(record) = iter.next() {
         match record {
@@ -52,7 +52,7 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
                 factor = *unit_in_meter;
             }
             Record::BgnStr(date) => {
-                let (struc, struc_refs) = parse_struc(iter, factor)?;
+                let (struc, struc_fakerefs) = parse_struc(iter, factor)?;
                 struc.borrow_mut().date = date.clone();
                 let struc_name = struc.borrow().name.clone();
                 if name_struc_map.contains_key(&struc_name) {
@@ -64,7 +64,7 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
                 let struc_name_cp = struc_name.clone();
                 name_struc_map.insert(struc_name, struc);
 
-                struc_ref_strucname_map.insert(struc_name_cp, struc_refs);
+                struc_ref_strucname_map.insert(struc_name_cp, struc_fakerefs);
             }
             Record::EndLib => {
                 break;
@@ -80,12 +80,11 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
         let cur_struc_name = &c.0;
         let cur_struc = name_struc_map.get(cur_struc_name).unwrap().clone();
         let mut mut_cur_struc = cur_struc.borrow_mut();
-        for r in c.1{
+        for struc_fakeref in c.1{
             // ref refer to struc
-            let mut struc_ref = r.0;
-            let ref_struc_name = &r.1;
+            let ref_struc_name = &struc_fakeref.refed_struc_name;
             let refed_struc = name_struc_map.get(ref_struc_name).unwrap().clone();
-            struc_ref.refed_struc = refed_struc;
+            let struc_ref = struc_fakeref.create_tureref(refed_struc);
             // current struc add refs
             mut_cur_struc.refs.push(struc_ref);
         }
@@ -93,7 +92,7 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
 
     // step.3 add all struc to lib
     for c in name_struc_map{
-        lib.strucs.push(c.1);
+        lib.add_struc(c.1)?;
     }
 
     Ok(lib)
@@ -102,10 +101,10 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
 fn parse_struc(
     iter: &mut Iter<'_, Record>,
     factor: f64
-) -> Result<(Rc<RefCell<Struc>>,Vec::<(gds_model::Ref, String)>), Box<dyn Error>> {
+) -> Result<(Rc<RefCell<Struc>>,Vec::<gds_model::FakeRef>), Box<dyn Error>> {
     let struc = Rc::new(RefCell::new(Struc::new("")));
     let mut mut_struc = struc.borrow_mut();
-    let mut ref_refname = Vec::<(gds_model::Ref, String)>::new();
+    let mut ref_refname = Vec::<gds_model::FakeRef>::new();
     while let Some(record) = iter.next() {
         match record {
             Record::BgnStr(date) => mut_struc.date = date.clone(), // last modification time of a structure and marks the beginning of a structure
@@ -119,16 +118,16 @@ fn parse_struc(
                 mut_struc.paths.push(path);
             }
             Record::StrRef => {
-                let (sref, ref_strucname) = parse_sref(iter, factor)?;
-                ref_refname.push((sref, ref_strucname));
+                let sref = parse_sref(iter, factor)?;
+                ref_refname.push(sref);
             }
             Record::Text => {
                 let text = parse_text(iter, factor)?;
                 mut_struc.label.push(text)
             }
             Record::AryRef => {
-                let (aref, ref_strucname)  = parse_aref(iter, factor)?;
-                ref_refname.push((aref, ref_strucname));
+                let aref  = parse_aref(iter, factor)?;
+                ref_refname.push(aref );
             }
             Record::EndStr => {
                 break;
@@ -278,15 +277,13 @@ fn parse_path(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Path, Box<dyn 
     Ok(path)
 }
 
-fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String), Box<dyn Error>> {
-    let tmp_struc = Rc::<RefCell<Struc>>::new(RefCell::new( Struc::new("temp")));
-    let mut sref = Ref::new(tmp_struc);
-    let mut ref_struc_name = String::new();
+fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<FakeRef, Box<dyn Error>> {
+    let mut sref = FakeRef::new();
     let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
         match record {
             Record::StrRef => (), // marks the beginning of an SREF(structure reference) element
-            Record::StrRefName(s) => ref_struc_name = s.to_string(),
+            Record::StrRefName(s) => sref.refed_struc_name = s.to_string(),
             Record::RefTrans {
                 reflection_x,
                 ..
@@ -318,18 +315,16 @@ fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String),
             }
         }
     }
-    Ok((sref,ref_struc_name))
+    Ok(sref)
 }
 
-fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String), Box<dyn Error>> {
-    let tmp_struc = Rc::<RefCell<Struc>>::new(RefCell::new( Struc::new("temp")));
-    let mut aref = Ref::new(tmp_struc);
-    let mut ref_strucname = String::new();
+fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<FakeRef, Box<dyn Error>> {
+    let mut aref = FakeRef::new();
     let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
         match record {
             Record::AryRef => (), // marks the beginning of an SREF(structure reference) element
-            Record::StrRefName(s) =>ref_strucname=s.to_string(),
+            Record::StrRefName(s) =>aref.refed_struc_name=s.to_string(),
             Record::RefTrans {
                 reflection_x,
                 ..
@@ -371,7 +366,7 @@ fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<(Ref, String),
             }
         }
     }
-    Ok((aref, ref_strucname))
+    Ok(aref)
 }
 
 fn i32_vec_2_pointvec(vec: &[(i32, i32)], factor: f64) -> Vec<Points> {

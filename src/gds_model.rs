@@ -26,7 +26,8 @@ pub struct Lib {
     ///
     /// default is 1e-9
     pub precision: f64,
-    pub(crate) strucs: Vec<Rc<RefCell<Struc>>>,
+    // each Struc has a uniq name in Lib
+    pub(crate) strucs: HashMap<String, Rc<RefCell<Struc>>>,
     pub date: Date,
 }
 
@@ -50,7 +51,7 @@ impl Lib {
             name: libname.to_string(),
             units: 1e-6,
             precision: 1e-9,
-            strucs: Vec::<Rc<RefCell<Struc>>>::new(),
+            strucs: HashMap::<String, Rc<RefCell<Struc>>>::new(),
             date: Date::now(),
         }
     }
@@ -61,25 +62,33 @@ impl Lib {
     /// struc_a has a ref which refer to struc_b
     ///
     /// lib.add_struc(struc_a) will also add struc_b
-    pub fn add_struc(&mut self, struc: Rc<RefCell<Struc>>) {
+    pub fn add_struc(&mut self, struc: Rc<RefCell<Struc>>) -> Result<(), Box<dyn Error>> {
         for r in &struc.borrow().refs {
-            self.add_struc(r.refed_struc.clone());
+            self.add_struc(r.refed_struc.clone())?;
         }
-        self.strucs.push(struc);
+        if self.strucs.contains_key(&struc.borrow().name) {
+            return Err(Box::new(gds_err(&std::format!(
+                "Struc with name \"{}\" already exits in this Lib",
+                &struc.borrow().name
+            ))));
+        }
+        self.strucs
+            .insert(struc.borrow().name.clone(), struc.clone());
+        Ok(())
     }
 
     /// Get Strucs not refered by any Ref
     pub fn top_strucs(&self) -> Vec<Rc<RefCell<Struc>>> {
         let mut top_struc = Vec::<Rc<RefCell<Struc>>>::new(); // self.strucs.clone();
         let mut refed_strucs = HashMap::<String, Rc<RefCell<Struc>>>::new();
-        for c in &self.strucs[..] {
-            for refer in &c.borrow().refs[..] {
+        for c in &self.strucs {
+            for refer in &c.1.borrow().refs[..] {
                 get_struc_from_ref(refer, &mut refed_strucs, -1)
             }
         }
-        for ref c in &self.strucs[..] {
-            if !refed_strucs.contains_key(&c.borrow().name) {
-                top_struc.push((*c).clone());
+        for ref c in &self.strucs {
+            if !refed_strucs.contains_key(&c.1.borrow().name) {
+                top_struc.push((*c.1).clone());
             }
         }
 
@@ -152,7 +161,7 @@ impl GdsObject for Lib {
 
         // dump strucs
         for ref_c in &self.strucs {
-            let struc = ref_c.borrow();
+            let struc = ref_c.1.borrow();
             let struc_bytes = struc.to_gds(scaling)?;
             data.extend(struc_bytes);
         }
@@ -605,6 +614,53 @@ impl GdsObject for Ref {
     }
 }
 
+// FakeRef only used for gdsii file parse, cache Ref data
+pub(crate) struct FakeRef {
+    pub refed_struc_name: String,
+    pub reflection_x: bool,
+    // pub abs_magnific: bool,
+    pub magnific: f64,
+    // pub abs_angel: bool,
+    pub angle: f64, //measured in degrees and in the counterclockwise direction
+    pub origin: Points,
+    pub row: i16,
+    pub column: i16,
+    pub spaceing_row: Vector,
+    pub spaceing_col: Vector,
+    pub property: HashMap<i16, String>,
+}
+
+impl FakeRef {
+    pub(crate) fn new() -> Self {
+        FakeRef {
+            refed_struc_name: String::new(),
+            reflection_x: false,
+            magnific: 1.0,
+            angle: 0.0,
+            origin: Points::new(0.0, 0.0),
+            row: 0,
+            column: 0,
+            spaceing_row: Vector { x: 0.0, y: 0.0 },
+            spaceing_col: Vector { x: 0.0, y: 0.0 },
+            property: HashMap::<i16, String>::new(),
+        }
+    }
+
+    pub(crate) fn create_tureref(self, struc: Rc<RefCell<Struc>>) -> Ref {
+        let mut struc_ref = Ref::new(struc);
+        struc_ref.reflection_x = self.reflection_x;
+        struc_ref.magnific = self.magnific;
+        struc_ref.angle = self.angle;
+        struc_ref.origin = self.origin;
+        struc_ref.row = self.row;
+        struc_ref.column = self.column;
+        struc_ref.spaceing_row = self.spaceing_row;
+        struc_ref.spaceing_col = self.spaceing_col;
+        struc_ref.property = self.property;
+        struc_ref
+    }
+}
+
 #[derive(Debug)]
 pub enum TextAnchor {
     NW, // NorthWest
@@ -758,9 +814,9 @@ mod test_gds_model {
         let ref2 = Ref::new(struc2.clone());
         struc2.borrow_mut().refs.push(ref3);
         struc1.borrow_mut().refs.push(ref2);
-        gds_lib.strucs.push(struc1.clone());
-        gds_lib.strucs.push(struc2);
-        gds_lib.strucs.push(struc3);
+        let _ = gds_lib.add_struc(struc1.clone());
+        let _ = gds_lib.add_struc(struc2);
+        let _ = gds_lib.add_struc(struc3);
 
         let top_struc = gds_lib.top_strucs();
         assert_eq!(top_struc.len(), 1);
