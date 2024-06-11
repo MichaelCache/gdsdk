@@ -4,8 +4,45 @@ use super::gds_record::{self, Date};
 use super::gds_writer::{self, *};
 use crate::gds_error::gds_err;
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::error::Error;
+use std::hash::Hash;
 use std::{collections::HashMap, rc::Rc};
+
+#[derive(Debug)]
+struct HashStrucAddr(Rc<RefCell<Struc>>);
+
+impl HashStrucAddr {
+    pub fn new(str: &Rc<RefCell<Struc>>) -> Self {
+        HashStrucAddr(Rc::clone(str))
+    }
+}
+
+impl Hash for HashStrucAddr {
+    // use Struc obj address as hash
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let borrow = self.0.borrow();
+        // borrow.name.hash(state)
+        (&*borrow as *const _ as usize).hash(state)
+    }
+}
+
+impl PartialEq for HashStrucAddr {
+    // only use Struc obj address for compare in hash
+    fn eq(&self, other: &Self) -> bool {
+        let borrow = self.0.borrow();
+        let rhs = other.0.borrow();
+        let this_addr = &*borrow as *const _ as usize;
+        let rhs_addr = &*rhs as *const _ as usize;
+        PartialEq::eq(&this_addr, &rhs_addr)
+    }
+}
+
+impl Eq for HashStrucAddr {}
+
+//  TODO:
+// 1. Struc need to knowe about its Lib container, when Struc name changed, Lib need to update
+// 2. try use parrellel process to read and write gds file
 
 /// Gds Library
 #[derive(Debug)]
@@ -27,7 +64,7 @@ pub struct Lib {
     /// default is 1e-9
     pub precision: f64,
     // each Struc has a uniq name in Lib
-    pub(crate) strucs: HashMap<String, Rc<RefCell<Struc>>>,
+    pub(crate) strucs: HashSet<HashStrucAddr>,
     pub date: Date,
 }
 
@@ -51,7 +88,7 @@ impl Lib {
             name: libname.to_string(),
             units: 1e-6,
             precision: 1e-9,
-            strucs: HashMap::<String, Rc<RefCell<Struc>>>::new(),
+            strucs: HashSet::<HashStrucAddr>::new(),
             date: Date::now(),
         }
     }
@@ -66,14 +103,11 @@ impl Lib {
         for r in &struc.borrow().refs {
             self.add_struc(r.refed_struc.clone())?;
         }
-        if self.strucs.contains_key(&struc.borrow().name) {
-            return Err(Box::new(gds_err(&std::format!(
-                "Struc with name \"{}\" already exits in this Lib",
-                &struc.borrow().name
-            ))));
+        if self.strucs.contains(&HashStrucAddr::new(&struc)) {
+            // Struc has already in Lib, do nothing
+        } else {
+            self.strucs.insert(HashStrucAddr::new(&struc));
         }
-        self.strucs
-            .insert(struc.borrow().name.clone(), struc.clone());
         Ok(())
     }
 
@@ -82,13 +116,13 @@ impl Lib {
         let mut top_struc = Vec::<Rc<RefCell<Struc>>>::new(); // self.strucs.clone();
         let mut refed_strucs = HashMap::<String, Rc<RefCell<Struc>>>::new();
         for c in &self.strucs {
-            for refer in &c.1.borrow().refs[..] {
+            for refer in &c.0.borrow().refs[..] {
                 get_struc_from_ref(refer, &mut refed_strucs, -1)
             }
         }
         for ref c in &self.strucs {
-            if !refed_strucs.contains_key(&c.1.borrow().name) {
-                top_struc.push((*c.1).clone());
+            if !refed_strucs.contains_key(&c.0.borrow().name) {
+                top_struc.push(c.0.clone());
             }
         }
 
@@ -161,7 +195,7 @@ impl GdsObject for Lib {
 
         // dump strucs
         for ref_c in &self.strucs {
-            let struc = ref_c.1.borrow();
+            let struc = ref_c.0.borrow();
             let struc_bytes = struc.to_gds(scaling)?;
             data.extend(struc_bytes);
         }

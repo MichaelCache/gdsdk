@@ -75,7 +75,7 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
         }
     }
 
-    // step.2 connect reference to struc,
+    // step.2 connect reference to struc
     for c in struc_ref_strucname_map {
         let cur_struc_name = &c.0;
         let cur_struc = name_struc_map.get(cur_struc_name).unwrap().clone();
@@ -103,19 +103,19 @@ fn parse_struc(
     factor: f64
 ) -> Result<(Rc<RefCell<Struc>>,Vec::<gds_model::FakeRef>), Box<dyn Error>> {
     let struc = Rc::new(RefCell::new(Struc::new("")));
-    let mut mut_struc = struc.borrow_mut();
+    // let mut mut_struc = struc.borrow_mut();
     let mut ref_refname = Vec::<gds_model::FakeRef>::new();
     while let Some(record) = iter.next() {
         match record {
-            Record::BgnStr(date) => mut_struc.date = date.clone(), // last modification time of a structure and marks the beginning of a structure
-            Record::StrName(s) => mut_struc.name = s.to_string(),
+            Record::BgnStr(date) => struc.borrow_mut().date = date.clone(), // last modification time of a structure and marks the beginning of a structure
+            Record::StrName(s) => struc.borrow_mut().name = s.to_string(),
             Record::Boundary | Record::Box => {
                 let polygon = parse_polygon(iter, factor)?;
-                mut_struc.polygons.push(polygon);
+                struc.borrow_mut().polygons.push(polygon);
             }
             Record::Path => {
                 let path = parse_path(iter, factor)?;
-                mut_struc.paths.push(path);
+                struc.borrow_mut().paths.push(path);
             }
             Record::StrRef => {
                 let sref = parse_sref(iter, factor)?;
@@ -123,7 +123,7 @@ fn parse_struc(
             }
             Record::Text => {
                 let text = parse_text(iter, factor)?;
-                mut_struc.label.push(text)
+                struc.borrow_mut().label.push(text)
             }
             Record::AryRef => {
                 let aref  = parse_aref(iter, factor)?;
@@ -137,7 +137,6 @@ fn parse_struc(
             }
         }
     }
-    std::mem::drop(mut_struc);
 
     Ok((struc, ref_refname))
 }
