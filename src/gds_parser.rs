@@ -253,7 +253,7 @@ fn parse_path(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Path, Box<dyn 
             Record::Layer(l) => path.layer = *l,
             Record::DataType(d) => path.datatype = *d,
             Record::Width(w) => path.width = *w as f64 * factor,
-            Record::PathType(t) => path.end_type = *t,
+            Record::PathType(t) => path.end_type = t.try_into()?,
             Record::Points(points) => {
                 path.points = i32_vec_2_pointvec(points, factor);
             }
