@@ -1,6 +1,7 @@
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use std::{error::Error, time::SystemTime};
 
+use super::*;
 use crate::gds_error;
 
 #[derive(Debug, Default, Clone)]
@@ -88,5 +89,25 @@ impl Date {
             acc_minute: *it.next().unwrap(),
             acc_second: *it.next().unwrap(),
         })
+    }
+}
+
+
+impl GdsObject for Date {
+    fn to_gds(&self, _: f64) -> Result<Vec<u8>, Box<dyn Error>> {
+        let mut date_data = Vec::<u8>::new();
+        date_data.extend(self.mod_year.to_be_bytes());
+        date_data.extend(self.mod_month.to_be_bytes());
+        date_data.extend(self.mod_day.to_be_bytes());
+        date_data.extend(self.mod_hour.to_be_bytes());
+        date_data.extend(self.mod_minute.to_be_bytes());
+        date_data.extend(self.mod_second.to_be_bytes());
+        date_data.extend(self.acc_year.to_be_bytes());
+        date_data.extend(self.acc_month.to_be_bytes());
+        date_data.extend(self.acc_day.to_be_bytes());
+        date_data.extend(self.acc_hour.to_be_bytes());
+        date_data.extend(self.acc_minute.to_be_bytes());
+        date_data.extend(self.acc_second.to_be_bytes());
+        Ok(date_data)
     }
 }

@@ -1,12 +1,13 @@
-use super::gds_error::*;
-use super::gds_record::*;
 use std::error::Error;
-use super::gds_model::Date;
+
+use super::gds_error;
+use super::gds_model;
+use super::gds_record;
 
 fn two_byte_int(byte: &[u8]) -> Result<Vec<i16>, Box<dyn Error>> {
     let byte_len = byte.len();
     if byte_len % 2 != 0 {
-        return Err(Box::new(gds_err(
+        return Err(Box::new(gds_error::gds_err(
             "transfer two byte int failed: byte length % 2 != 0",
         )));
     }
@@ -20,7 +21,7 @@ fn two_byte_int(byte: &[u8]) -> Result<Vec<i16>, Box<dyn Error>> {
 fn four_byte_int(byte: &[u8]) -> Result<Vec<i32>, Box<dyn Error>> {
     let byte_len = byte.len();
     if byte_len % 4 != 0 {
-        return Err(Box::new(gds_err(
+        return Err(Box::new(gds_error::gds_err(
             "transfer four byte int failed: byte length % 4 != 0",
         )));
     }
@@ -45,7 +46,7 @@ fn four_byte_int(byte: &[u8]) -> Result<Vec<i32>, Box<dyn Error>> {
 /// and value = (-1)^S*2^(E as u32 -1023)*(1+M as u64/2^52)
 pub(crate) fn gdsii_eight_byte_real(byte: &[u8]) -> Result<f64, Box<dyn Error>> {
     if byte.len() != 8 {
-        return Err(Box::new(gds_err(
+        return Err(Box::new(gds_error::gds_err(
             "transfer eight byte real failed: byte length != 8",
         )));
     }
@@ -65,7 +66,7 @@ pub(crate) fn gdsii_eight_byte_real(byte: &[u8]) -> Result<f64, Box<dyn Error>> 
 fn eight_byte_real(byte: &[u8]) -> Result<Vec<f64>, Box<dyn Error>> {
     let byte_len = byte.len();
     if byte_len % 8 != 0 {
-        return Err(Box::new(gds_err(
+        return Err(Box::new(gds_error::gds_err(
             "transfer eight byte real failed: byte length % 8 != 0",
         )));
     }
@@ -86,144 +87,150 @@ fn ascii_string(byte: &[u8]) -> Result<String, Box<dyn Error>> {
     if s.is_ascii() {
         Ok(s)
     } else {
-        Err(Box::new(gds_err(&format!(
+        Err(Box::new(gds_error::gds_err(&format!(
             "{} contains char not in ascii charset",
             s
         ))))
     }
 }
 
-pub fn record_type(bytes: &[u8]) -> Result<Record, Box<dyn Error>> {
+pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
     if bytes.len() < 4 {
-        return Err(Box::new(gds_err("gds record length less than 4 bytes")));
+        return Err(Box::new(gds_error::gds_err(
+            "gds record length less than 4 bytes",
+        )));
     }
     let record = &bytes[2..4];
     let data = &bytes[4..];
     match record {
-        HEADER => {
+        gds_record::HEADER => {
             let version = two_byte_int(data)?;
-            Ok(Record::Header {
+            Ok(gds_record::Record::Header {
                 version: version[0],
             })
         }
-        BGNLIB => {
+        gds_record::BGNLIB => {
             let date = two_byte_int(data)?;
-            Ok(Record::BgnLib(Date::from_i16_array(&date)?))
+            Ok(gds_record::Record::BgnLib(gds_model::Date::from_i16_array(
+                &date,
+            )?))
         }
         // TODO:
         // manual require libname follow UNIX filename conventions for length and valid characters. 1023
         // which is 1023 characters including alphanumeric characters (A-Z, a-z, and 0-9), blanks,
         // mathematical symbols (+ - = | ~ ( ) < > { } \), punctuation marks (? , . ! ; : ' " / [ ]),
         // and the following special characters: &, %, $, #, @, ^, *, and _
-        LIBNAME => Ok(Record::LibName(ascii_string(data)?)),
-        UNITS => {
+        gds_record::LIBNAME => Ok(gds_record::Record::LibName(ascii_string(data)?)),
+        gds_record::UNITS => {
             let unit = eight_byte_real(data)?;
-            Ok(Record::Units {
+            Ok(gds_record::Record::Units {
                 unit_in_meter: unit[0],
                 precision: unit[1],
             })
         }
-        ENDLIB => Ok(Record::EndLib),
-        BGNSTR => {
+        gds_record::ENDLIB => Ok(gds_record::Record::EndLib),
+        gds_record::BGNSTR => {
             let date = two_byte_int(data)?;
-            Ok(Record::BgnStr(Date::from_i16_array(&date)?))
+            Ok(gds_record::Record::BgnStr(gds_model::Date::from_i16_array(
+                &date,
+            )?))
         }
         // TODO:
         // manual require strname can be up to 32 characters
         // including alphanumeric characters (A-Z, a-z, and 0-9)
         // Underscore (_), Question mark (?) and Dollar sign ($)
-        STRNAME => Ok(Record::StrName(ascii_string(data)?)),
-        ENDSTR => Ok(Record::EndStr),
-        BOUNDARY => Ok(Record::Boundary),
-        PATH => Ok(Record::Path),
-        SREF => Ok(Record::StrRef),
-        AREF => Ok(Record::AryRef),
-        TEXT => Ok(Record::Text),
-        LAYER => {
+        gds_record::STRNAME => Ok(gds_record::Record::StrName(ascii_string(data)?)),
+        gds_record::ENDSTR => Ok(gds_record::Record::EndStr),
+        gds_record::BOUNDARY => Ok(gds_record::Record::Boundary),
+        gds_record::PATH => Ok(gds_record::Record::Path),
+        gds_record::SREF => Ok(gds_record::Record::StrRef),
+        gds_record::AREF => Ok(gds_record::Record::AryRef),
+        gds_record::TEXT => Ok(gds_record::Record::Text),
+        gds_record::LAYER => {
             let layer = two_byte_int(data)?[0];
             // TODO:
             // manual require layer in range [0..255]
             // assert!(layer >= 0 && layer <= 255);
-            Ok(Record::Layer(layer))
+            Ok(gds_record::Record::Layer(layer))
         }
-        DATATYPE => {
+        gds_record::DATATYPE => {
             let datatype = two_byte_int(data)?[0];
             // TODO:
             // manual require datatype in range [0..255]
             // assert!(datatype >= 0 && datatype <= 255);
-            Ok(Record::DataType(datatype))
+            Ok(gds_record::Record::DataType(datatype))
         }
-        WIDTH => {
+        gds_record::WIDTH => {
             let width = four_byte_int(data)?[0];
-            Ok(Record::Width(width))
+            Ok(gds_record::Record::Width(width))
         }
-        XY => {
+        gds_record::XY => {
             // let data = ;
             let xy: Vec<(i32, i32)> = four_byte_int(data)?
                 .chunks(2)
                 .map(|p| (p[0], p[1]))
                 .collect();
-            Ok(Record::Points(xy))
+            Ok(gds_record::Record::Points(xy))
         }
-        ENDEL => Ok(Record::EndElem),
+        gds_record::ENDEL => Ok(gds_record::Record::EndElem),
         // TODO:
         // follow STRNAME rule
-        SNAME => Ok(Record::StrRefName(ascii_string(data)?)),
-        COLROW => {
+        gds_record::SNAME => Ok(gds_record::Record::StrRefName(ascii_string(data)?)),
+        gds_record::COLROW => {
             let nums = two_byte_int(data)?;
-            Ok(Record::ColRow {
+            Ok(gds_record::Record::ColRow {
                 column: nums[0],
                 row: nums[1],
             })
         }
         // TEXTNODE => Record::TEXTNODE,
         // NODE => Record::NODE,
-        TEXTTYPE => Ok(Record::TextType(two_byte_int(data)?[0])),
-        PRESENTATION => {
+        gds_record::TEXTTYPE => Ok(gds_record::Record::TextType(two_byte_int(data)?[0])),
+        gds_record::PRESENTATION => {
             let font_tag = data[1] & 0b0011_0000;
             let ver_tag = data[1] & 0b0000_1100;
             let hor_tag = data[1] & 0b0000_0011;
-            Ok(Record::Presentation {
+            Ok(gds_record::Record::Presentation {
                 font_num: if font_tag == 0b0000_0000 {
-                    PresentationFont::Fonts0
+                    gds_record::PresentationFont::Fonts0
                 } else if font_tag == 0b0001_0000 {
-                    PresentationFont::Fonts1
+                    gds_record::PresentationFont::Fonts1
                 } else if font_tag == 0b0010_0000 {
-                    PresentationFont::Fonts2
+                    gds_record::PresentationFont::Fonts2
                 } else if font_tag == 0b0011_0000 {
-                    PresentationFont::Fonts3
+                    gds_record::PresentationFont::Fonts3
                 } else {
-                    return Err(Box::new(gds_err("Unknown font type")));
+                    return Err(Box::new(gds_error::gds_err("Unknown font type")));
                 },
                 vertival_justfication: if ver_tag == 0b0000_0000 {
-                    PresentationVerticalPos::Top
+                    gds_record::PresentationVerticalPos::Top
                 } else if ver_tag == 0b0000_0100 {
-                    PresentationVerticalPos::Middle
+                    gds_record::PresentationVerticalPos::Middle
                 } else if ver_tag == 0b0000_1000 {
-                    PresentationVerticalPos::Bottom
+                    gds_record::PresentationVerticalPos::Bottom
                 } else {
-                    return Err(Box::new(gds_err("Unknown vertical type")));
+                    return Err(Box::new(gds_error::gds_err("Unknown vertical type")));
                 },
                 horizontal_justfication: if hor_tag == 0b0000_0000 {
-                    PresentationHorizontalPos::Left
+                    gds_record::PresentationHorizontalPos::Left
                 } else if hor_tag == 0b0000_0001 {
-                    PresentationHorizontalPos::Center
+                    gds_record::PresentationHorizontalPos::Center
                 } else if hor_tag == 0b0000_0010 {
-                    PresentationHorizontalPos::Right
+                    gds_record::PresentationHorizontalPos::Right
                 } else {
-                    return Err(Box::new(gds_err("Unknown horizontal type")));
+                    return Err(Box::new(gds_error::gds_err("Unknown horizontal type")));
                 },
             })
         }
         // SPACING => Record::SPACING,
-        STRING => {
+        gds_record::STRING => {
             let s = ascii_string(data)?;
             if s.len() > 512 {
-                return Err(Box::new(gds_err("Lib string exceed 512 chars")));
+                return Err(Box::new(gds_error::gds_err("Lib string exceed 512 chars")));
             }
-            Ok(Record::String(s))
+            Ok(gds_record::Record::String(s))
         }
-        STRANS => Ok(Record::RefTrans {
+        gds_record::STRANS => Ok(gds_record::Record::RefTrans {
             // test bit 0
             reflection_x: if data[0] & 0x80 != 0 { true } else { false },
             // test bit 13
@@ -231,13 +238,13 @@ pub fn record_type(bytes: &[u8]) -> Result<Record, Box<dyn Error>> {
             // test bit 14
             absolute_angle: if data[1] & 0x02 != 0 { true } else { false },
         }),
-        MAG => Ok(Record::Mag(eight_byte_real(data)?[0])),
-        ANGLE => Ok(Record::Angle(eight_byte_real(data)?[0])),
+        gds_record::MAG => Ok(gds_record::Record::Mag(eight_byte_real(data)?[0])),
+        gds_record::ANGLE => Ok(gds_record::Record::Angle(eight_byte_real(data)?[0])),
         // UINTEGER => Record::UINTEGER,
         // USTRING => Record::USTRING,
         // REFLIBS => Record::REFLIBS,
         // FONTS => Record::FONTS,
-        PATHTYPE => Ok(Record::PathType(two_byte_int(data)?[0])),
+        gds_record::PATHTYPE => Ok(gds_record::Record::PathType(two_byte_int(data)?[0])),
         // GENERATIONS => Record::GENERATIONS,
         // ATTRTABLE => Record::ATTRTABLE,
         // STYPTABLE => Record::STYPTABLE,
@@ -247,24 +254,26 @@ pub fn record_type(bytes: &[u8]) -> Result<Record, Box<dyn Error>> {
         // LINKTYPE => Record::LINKTYPE,
         // LINKKEYS => Record::LINKKEYS,
         // NODETYPE => Record::NODETYPE,
-        PROPATTR => {
+        gds_record::PROPATTR => {
             let v = two_byte_int(data)?[0];
             // TODO:
             // manual require number is an integer from 1 to 127. Attribute numbers 126 and 127 are reserved
             // assert!(v>=1 && v<= 127);
-            Ok(Record::PropAttr(v))
+            Ok(gds_record::Record::PropAttr(v))
         }
-        PROPVALUE => {
+        gds_record::PROPVALUE => {
             let s = ascii_string(data)?;
             if s.len() > 126 {
-                return Err(Box::new(gds_err("Property value record exceed 126 chars")));
+                return Err(Box::new(gds_error::gds_err(
+                    "Property value record exceed 126 chars",
+                )));
             }
-            Ok(Record::PropValue(s))
+            Ok(gds_record::Record::PropValue(s))
         }
-        BOX => Ok(Record::Box),
-        BOXTYPE => {
+        gds_record::BOX => Ok(gds_record::Record::Box),
+        gds_record::BOXTYPE => {
             let boxtype = two_byte_int(data)?[0];
-            Ok(Record::BoxType(boxtype))
+            Ok(gds_record::Record::BoxType(boxtype))
         }
         // PLEX => Record::PLEX,
         // BGNEXTN => Record::BGNEXTN,
@@ -289,7 +298,7 @@ pub fn record_type(bytes: &[u8]) -> Result<Record, Box<dyn Error>> {
         // USERCONSTRAINT => Record::USERCONSTRAINT,
         // SPACERERROR => Record::SPACERERROR,
         // CONTACT => Record::CONTACT,
-        _ => Err(Box::new(gds_err(&format!(
+        _ => Err(Box::new(gds_error::gds_err(&format!(
             "Error: unkonw record {:#02x?}",
             bytes
         )))),

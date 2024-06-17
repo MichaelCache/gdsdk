@@ -126,6 +126,11 @@ impl Lib {
         top_struc
     }
 
+    /// Get all Strucs
+    pub fn all_strucs(&self) -> Vec<Rc<RefCell<Struc>>> {
+        self.strucs.iter().map(|c| c.0.clone()).collect::<Vec<_>>()
+    }
+
     /// Dump Lib and recurse dump Lib's Strucs to gds file bytes
     pub fn gds_bytes(&self) -> Result<Vec<u8>, Box<dyn Error>> {
         self.to_gds(0.0)
@@ -151,18 +156,7 @@ impl GdsObject for Lib {
         // bgnlib and date
         let mut date_data = Vec::<u8>::new();
         date_data.extend(gds_record::BGNLIB);
-        date_data.extend(self.date.mod_year.to_be_bytes());
-        date_data.extend(self.date.mod_month.to_be_bytes());
-        date_data.extend(self.date.mod_day.to_be_bytes());
-        date_data.extend(self.date.mod_hour.to_be_bytes());
-        date_data.extend(self.date.mod_minute.to_be_bytes());
-        date_data.extend(self.date.mod_second.to_be_bytes());
-        date_data.extend(self.date.acc_year.to_be_bytes());
-        date_data.extend(self.date.acc_month.to_be_bytes());
-        date_data.extend(self.date.acc_day.to_be_bytes());
-        date_data.extend(self.date.acc_hour.to_be_bytes());
-        date_data.extend(self.date.acc_minute.to_be_bytes());
-        date_data.extend(self.date.acc_second.to_be_bytes());
+        date_data.extend(self.date.to_gds(0.0)?);
 
         data.extend((date_data.len() as i16 + 2_i16).to_be_bytes());
         data.extend(date_data);

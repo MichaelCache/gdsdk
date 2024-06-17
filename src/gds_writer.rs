@@ -1,8 +1,8 @@
 use std::vec::Vec;
 
-use super::gds_model::TextAnchor;
+use super::gds_model;
 
-pub fn ascii_string_to_be_bytes(s: &str) -> Vec<u8> {
+pub(crate) fn ascii_string_to_be_bytes(s: &str) -> Vec<u8> {
     let mut be_bytes = Vec::<u8>::new();
     if !s.is_ascii() {
         panic!("{} is not ascii", s);
@@ -14,7 +14,7 @@ pub fn ascii_string_to_be_bytes(s: &str) -> Vec<u8> {
     be_bytes
 }
 
-pub fn f64_to_gds_bytes(v: f64) -> Vec<u8> {
+pub(crate) fn f64_to_gds_bytes(v: f64) -> Vec<u8> {
     let mut be_bytes = Vec::<u8>::new();
     be_bytes.resize(1, 0);
 
@@ -38,17 +38,17 @@ pub fn f64_to_gds_bytes(v: f64) -> Vec<u8> {
     be_bytes
 }
 
-pub fn text_anchor_to_gds_num(anchor: &TextAnchor) -> u16 {
+pub(crate) fn text_anchor_to_gds_num(anchor: &gds_model::TextAnchor) -> u16 {
     match anchor {
-        TextAnchor::NW => 0,
-        TextAnchor::N => 1,
-        TextAnchor::NE => 2,
-        TextAnchor::W => 4,
-        TextAnchor::O => 5,
-        TextAnchor::E => 6,
-        TextAnchor::SW => 8,
-        TextAnchor::S => 9,
-        TextAnchor::SE => 10,
+        gds_model::TextAnchor::NW => 0,
+        gds_model::TextAnchor::N => 1,
+        gds_model::TextAnchor::NE => 2,
+        gds_model::TextAnchor::W => 4,
+        gds_model::TextAnchor::O => 5,
+        gds_model::TextAnchor::E => 6,
+        gds_model::TextAnchor::SW => 8,
+        gds_model::TextAnchor::S => 9,
+        gds_model::TextAnchor::SE => 10,
     }
 }
 

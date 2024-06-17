@@ -1,9 +1,6 @@
-use std::collections::HashMap;
-
 use super::*;
 use crate::gds_error;
 use crate::gds_record;
-use crate::gds_writer;
 
 #[derive(Default, Debug)]
 pub struct Polygon {
@@ -11,7 +8,7 @@ pub struct Polygon {
     pub datatype: i16,
     pub points: Vec<Points>,
     /// gds property, key is int value, value is max 128 bytes length ASCII str
-    pub property: HashMap<i16, String>,
+    pub property: Property,
 }
 
 impl GdsObject for Polygon {
@@ -54,28 +51,7 @@ impl GdsObject for Polygon {
         }
 
         // properties
-        for prop in &self.property {
-            data.extend(6_i16.to_be_bytes());
-            data.extend(gds_record::PROPATTR);
-            data.extend(prop.0.to_be_bytes());
-
-            let mut prop_value = Vec::<u8>::new();
-            prop_value.extend(gds_record::PROPVALUE);
-            let mut value = gds_writer::ascii_string_to_be_bytes(&prop.1);
-            if !value.len().is_power_of_two() {
-                value.push(0);
-            }
-            if value.len() > 128 {
-                gds_error::gds_err(&format!(
-                    "Gds Polygon property can not have ascii char more than 128 count:{:#?}",
-                    &self
-                ));
-            }
-            prop_value.extend(value);
-
-            data.extend((prop_value.len() as i16 + 2_i16).to_be_bytes());
-            data.extend(prop_value);
-        }
+        data.extend(self.property.to_gds(scaling)?);
 
         // endelement
         data.extend(4_i16.to_be_bytes());

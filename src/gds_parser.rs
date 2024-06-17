@@ -84,7 +84,7 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
             // ref refer to struc
             let ref_struc_name = &struc_fakeref.refed_struc_name;
             let refed_struc = name_struc_map.get(ref_struc_name).unwrap().clone();
-            let struc_ref = struc_fakeref.create_tureref(refed_struc);
+            let struc_ref = struc_fakeref.create_true_ref(refed_struc);
             // current struc add refs
             mut_cur_struc.refs.push(struc_ref);
         }
@@ -195,7 +195,7 @@ fn parse_text(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Text, Box<dyn 
             Record::PropAttr(key)=>cur_prokey = Some(*key),
             Record::PropValue(value) => {
                 if let Some(key) = cur_prokey{
-                    text.property.insert(key, value.to_string());   
+                    text.property.0.insert(key, value.to_string());   
                 }else{
                     return Err(Box::new(gds_err(&std::format!(
                         "Text Property value \"{}\" have no key",
@@ -228,7 +228,7 @@ fn parse_polygon(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Polygon, Bo
             Record::PropAttr(key)=>cur_prokey = Some(*key),
             Record::PropValue(value) => {
                 if let Some(key) = cur_prokey{
-                    polygon.property.insert(key, value.to_string());   
+                    polygon.property.0.insert(key, value.to_string());   
                 }else{
                     return Err(Box::new(gds_err(&std::format!(
                         "Polygon Property value \"{}\" have no key",
@@ -260,7 +260,7 @@ fn parse_path(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Path, Box<dyn 
             Record::PropAttr(key)=>cur_prokey = Some(*key),
             Record::PropValue(value) => {
                 if let Some(key) = cur_prokey{
-                    path.property.insert(key, value.to_string());   
+                    path.property.0.insert(key, value.to_string());   
                 }else{
                     return Err(Box::new(gds_err(&std::format!(
                         "Path Property value \"{}\" have no key",
@@ -301,7 +301,7 @@ fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<FakeRef, Box<d
             Record::PropAttr(key)=>cur_prokey = Some(*key),
             Record::PropValue(value) => {
                 if let Some(key) = cur_prokey{
-                    sref.property.insert(key, value.to_string());   
+                    sref.property.0.insert(key, value.to_string());   
                 }else{
                     return Err(Box::new(gds_err(&std::format!(
                         "Ref Property value \"{}\" have no key",
@@ -352,7 +352,7 @@ fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<FakeRef, Box<d
             Record::PropAttr(key)=>cur_prokey = Some(*key),
             Record::PropValue(value) => {
                 if let Some(key) = cur_prokey{
-                    aref.property.insert(key, value.to_string());   
+                    aref.property.0.insert(key, value.to_string());   
                 }else{
                     return Err(Box::new(gds_err(&std::format!(
                         "Ref Property value \"{}\" have no key",

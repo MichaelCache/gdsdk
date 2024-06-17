@@ -1,9 +1,7 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::*;
-use crate::gds_error;
 use crate::gds_record;
 use crate::gds_writer;
 
@@ -22,7 +20,7 @@ pub struct Ref {
     pub column: i16,
     pub spaceing_row: Vector,
     pub spaceing_col: Vector,
-    pub property: HashMap<i16, String>,
+    pub property: Property,
 }
 
 impl Ref {
@@ -37,7 +35,7 @@ impl Ref {
             column: 0,
             spaceing_row: Vector { x: 0.0, y: 0.0 },
             spaceing_col: Vector { x: 0.0, y: 0.0 },
-            property: HashMap::<i16, String>::new(),
+            property: Property::default(),
         }
     }
 }
@@ -133,28 +131,7 @@ impl GdsObject for Ref {
         }
 
         // properties
-        for prop in &self.property {
-            data.extend(6_i16.to_be_bytes());
-            data.extend(gds_record::PROPATTR);
-            data.extend(prop.0.to_be_bytes());
-
-            let mut prop_value = Vec::<u8>::new();
-            prop_value.extend(gds_record::PROPVALUE);
-            let mut value = gds_writer::ascii_string_to_be_bytes(&prop.1);
-            if !value.len().is_power_of_two() {
-                value.push(0);
-            }
-            if value.len() > 128 {
-                gds_error::gds_err(&format!(
-                    "Gds Ref property can not have ascii char more than 128 count:{:#?}",
-                    &self
-                ));
-            }
-            prop_value.extend(value);
-
-            data.extend((prop_value.len() as i16 + 2_i16).to_be_bytes());
-            data.extend(prop_value);
-        }
+        data.extend(self.property.to_gds(scaling)?);
 
         // endel
         data.extend(4_u16.to_be_bytes());
@@ -177,7 +154,7 @@ pub(crate) struct FakeRef {
     pub column: i16,
     pub spaceing_row: Vector,
     pub spaceing_col: Vector,
-    pub property: HashMap<i16, String>,
+    pub property: Property,
 }
 
 impl FakeRef {
@@ -192,11 +169,11 @@ impl FakeRef {
             column: 0,
             spaceing_row: Vector { x: 0.0, y: 0.0 },
             spaceing_col: Vector { x: 0.0, y: 0.0 },
-            property: HashMap::<i16, String>::new(),
+            property: Property::default(),
         }
     }
 
-    pub(crate) fn create_tureref(self, struc: Rc<RefCell<Struc>>) -> Ref {
+    pub(crate) fn create_true_ref(self, struc: Rc<RefCell<Struc>>) -> Ref {
         let mut struc_ref = Ref::new(struc);
         struc_ref.reflection_x = self.reflection_x;
         struc_ref.magnific = self.magnific;

@@ -5,8 +5,6 @@
 //      |  Total record length(in bytes)    |
 //      |  Record Type     |    Data Type   |
 //      |       Data content....            |
-use chrono::{DateTime, Datelike, Timelike, Utc};
-use std::{error::Error, time::SystemTime};
 
 use super::gds_error;
 use super::gds_model;

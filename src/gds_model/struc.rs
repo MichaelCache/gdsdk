@@ -32,18 +32,7 @@ impl GdsObject for Struc {
         // bgnstr and date
         let mut structure_data = Vec::<u8>::new();
         structure_data.extend(gds_record::BGNSTR);
-        structure_data.extend(self.date.mod_year.to_be_bytes());
-        structure_data.extend(self.date.mod_month.to_be_bytes());
-        structure_data.extend(self.date.mod_day.to_be_bytes());
-        structure_data.extend(self.date.mod_hour.to_be_bytes());
-        structure_data.extend(self.date.mod_minute.to_be_bytes());
-        structure_data.extend(self.date.mod_second.to_be_bytes());
-        structure_data.extend(self.date.acc_year.to_be_bytes());
-        structure_data.extend(self.date.acc_month.to_be_bytes());
-        structure_data.extend(self.date.acc_day.to_be_bytes());
-        structure_data.extend(self.date.acc_hour.to_be_bytes());
-        structure_data.extend(self.date.acc_minute.to_be_bytes());
-        structure_data.extend(self.date.acc_second.to_be_bytes());
+        structure_data.extend(self.date.to_gds(scaling)?);
 
         data.extend((structure_data.len() as i16 + 2_i16).to_be_bytes());
         data.extend(structure_data);

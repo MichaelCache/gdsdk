@@ -1,7 +1,7 @@
 use std::error::Error;
 
 mod date;
-mod lib;
+mod library;
 mod path;
 mod points;
 mod polygon;
@@ -9,9 +9,10 @@ mod sref;
 mod struc;
 mod text;
 mod vector;
+mod property;
 
 pub use self::date::*;
-pub use self::lib::*;
+pub use self::library::*;
 pub use self::path::*;
 pub use self::points::*;
 pub use self::polygon::*;
@@ -19,6 +20,7 @@ pub use self::sref::*;
 pub use self::struc::*;
 pub use self::text::*;
 pub use self::vector::*;
+pub use self::property::*;
 
 trait GdsObject {
     fn to_gds(&self, scaling: f64) -> Result<Vec<u8>, Box<dyn Error>>;
