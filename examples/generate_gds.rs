@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     struc_b.borrow_mut().polygons.push(polygon_2);
    
     // refer to struc_b
-    let mut struc_b_ref = Ref::new(struc_b.clone());
+    let mut struc_b_ref = Ref::new(&struc_b);
     struc_b_ref.origin = Points::new(300., 300.);
     // struc_b_ref is 3x2 array ref
     struc_b_ref.row = 3;

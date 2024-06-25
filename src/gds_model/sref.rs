@@ -24,9 +24,9 @@ pub struct Ref {
 }
 
 impl Ref {
-    pub fn new(refto: Rc<RefCell<Struc>>) -> Self {
+    pub fn new(refto: &Rc<RefCell<Struc>>) -> Self {
         Ref {
-            refed_struc: refto,
+            refed_struc: refto.clone(),
             reflection_x: false,
             magnific: 1.0,
             angle: 0.0,
@@ -173,7 +173,7 @@ impl FakeRef {
         }
     }
 
-    pub(crate) fn create_true_ref(self, struc: Rc<RefCell<Struc>>) -> Ref {
+    pub(crate) fn create_true_ref(self, struc: &Rc<RefCell<Struc>>) -> Ref {
         let mut struc_ref = Ref::new(struc);
         struc_ref.reflection_x = self.reflection_x;
         struc_ref.magnific = self.magnific;

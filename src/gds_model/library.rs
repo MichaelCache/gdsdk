@@ -1,9 +1,13 @@
+use petgraph::algo::is_cyclic_directed;
+use petgraph::graph::{DiGraph, NodeIndex};
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::{collections::HashMap, rc::Rc};
 
 use super::*;
+use crate::gds_error;
 use crate::{gds_record, gds_writer};
 
 #[derive(Debug)]
@@ -63,6 +67,8 @@ pub struct Lib {
     // each Struc has a uniq name in Lib
     pub(self) strucs: HashSet<HashStrucAddr>,
     pub date: Date,
+    pub(self) graph: DiGraph<Rc<RefCell<Struc>>, ()>,
+    strucs_nodeidx_map: HashMap<HashStrucAddr, NodeIndex<u32>>,
 }
 
 fn get_struc_from_ref(
@@ -87,6 +93,8 @@ impl Lib {
             precision: 1e-9,
             strucs: HashSet::<HashStrucAddr>::new(),
             date: Date::now(),
+            graph: DiGraph::<Rc<RefCell<Struc>>, ()>::new(),
+            strucs_nodeidx_map: HashMap::<HashStrucAddr, NodeIndex<u32>>::new(),
         }
     }
 
@@ -97,14 +105,54 @@ impl Lib {
     ///
     /// lib.add_struc(struc_a) will also add struc_b
     pub fn add_struc(&mut self, struc: Rc<RefCell<Struc>>) -> Result<(), Box<dyn Error>> {
-        for r in &struc.borrow().refs {
-            self.add_struc(r.refed_struc.clone())?;
-        }
         if self.strucs.contains(&HashStrucAddr::new(&struc)) {
             // Struc has already in Lib, do nothing
         } else {
             self.strucs.insert(HashStrucAddr::new(&struc));
+            let nodeidx = self.graph.add_node(struc.clone());
+            self.strucs_nodeidx_map
+                .insert(HashStrucAddr::new(&struc), nodeidx);
         }
+        for r in &struc.borrow().refs {
+            let &noedidx = self
+                .strucs_nodeidx_map
+                .get(&HashStrucAddr::new(&struc))
+                .unwrap();
+            self.add_struc_helper(r.refed_struc.clone(), &noedidx)?;
+        }
+        Ok(())
+    }
+
+    fn add_struc_helper(
+        &mut self,
+        struc: Rc<RefCell<Struc>>,
+        from_nodeidx: &NodeIndex<u32>,
+    ) -> Result<(), Box<dyn Error>> {
+        if self.strucs.contains(&HashStrucAddr::new(&struc)) {
+            // Struc has already in Lib, do nothing
+            let &nodeidx = self
+                .strucs_nodeidx_map
+                .get(&HashStrucAddr::new(&struc))
+                .unwrap();
+            self.graph.add_edge(*from_nodeidx, nodeidx, ());
+        } else {
+            self.strucs.insert(HashStrucAddr::new(&struc));
+            let nodeidx = self.graph.add_node(struc.clone());
+            self.strucs_nodeidx_map
+                .insert(HashStrucAddr::new(&struc), nodeidx);
+            self.graph.add_edge(*from_nodeidx, nodeidx, ());
+        }
+        if is_cyclic_directed(&self.graph) {
+            return Err(Box::new(gds_error::gds_err("Ref and Struc make a cycle")));
+        }
+        for r in &struc.borrow().refs {
+            let &nodeidx = self
+                .strucs_nodeidx_map
+                .get(&HashStrucAddr::new(&struc))
+                .unwrap();
+            self.add_struc_helper(r.refed_struc.clone(), &nodeidx)?;
+        }
+
         Ok(())
     }
 
@@ -198,5 +246,24 @@ impl GdsObject for Lib {
         data.extend((endlib_data.len() as i16 + 2_i16).to_be_bytes());
         data.extend(endlib_data);
         Ok(data)
+    }
+}
+
+#[cfg(test)]
+mod test_lib {
+    use super::*;
+    #[test]
+    fn test_lib() {
+        let mut lib = Lib::new("test");
+        // make cross ref
+        let struc_1 = Rc::new(RefCell::new(Struc::new("test_1")));
+        let struc_2 = Rc::new(RefCell::new(Struc::new("test_2")));
+        let ref_1 = Ref::new(&struc_1);
+        let ref_2 = Ref::new(&struc_2);
+        struc_2.borrow_mut().refs.push(ref_1);
+        struc_1.borrow_mut().refs.push(ref_2);
+
+        assert!(matches!(lib.add_struc(struc_1), Err(_)));
+        assert!(matches!(lib.add_struc(struc_2), Err(_)));
     }
 }

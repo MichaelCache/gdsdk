@@ -84,7 +84,7 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
             // ref refer to struc
             let ref_struc_name = &struc_fakeref.refed_struc_name;
             let refed_struc = name_struc_map.get(ref_struc_name).unwrap().clone();
-            let struc_ref = struc_fakeref.create_true_ref(refed_struc);
+            let struc_ref = struc_fakeref.create_true_ref(&refed_struc);
             // current struc add refs
             mut_cur_struc.refs.push(struc_ref);
         }

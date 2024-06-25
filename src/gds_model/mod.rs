@@ -38,8 +38,8 @@ mod test_gds_model {
         let struc1 = Rc::new(RefCell::new(Struc::new("cell1")));
         let struc2 = Rc::new(RefCell::new(Struc::new("cell2")));
         let struc3 = Rc::new(RefCell::new(Struc::new("cell3")));
-        let ref3 = Ref::new(struc3.clone());
-        let ref2 = Ref::new(struc2.clone());
+        let ref3 = Ref::new(&struc3);
+        let ref2 = Ref::new(&struc2);
         struc2.borrow_mut().refs.push(ref3);
         struc1.borrow_mut().refs.push(ref2);
         let _ = gds_lib.add_struc(struc1.clone());
