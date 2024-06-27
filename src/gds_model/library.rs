@@ -1,7 +1,6 @@
 use petgraph::algo::is_cyclic_directed;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::cell::RefCell;
-use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::{collections::HashMap, rc::Rc};
@@ -23,7 +22,6 @@ impl Hash for HashStrucAddr {
     // use Struc obj address as hash
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         let borrow = self.0.borrow();
-        // borrow.name.hash(state)
         (&*borrow as *const _ as usize).hash(state)
     }
 }
@@ -64,8 +62,6 @@ pub struct Lib {
     ///
     /// default is 1e-9
     pub precision: f64,
-    // each Struc has a uniq name in Lib
-    pub(self) strucs: HashSet<HashStrucAddr>,
     pub date: Date,
     pub(self) graph: DiGraph<Rc<RefCell<Struc>>, ()>,
     strucs_nodeidx_map: HashMap<HashStrucAddr, NodeIndex<u32>>,
@@ -91,7 +87,6 @@ impl Lib {
             name: libname.to_string(),
             units: 1e-6,
             precision: 1e-9,
-            strucs: HashSet::<HashStrucAddr>::new(),
             date: Date::now(),
             graph: DiGraph::<Rc<RefCell<Struc>>, ()>::new(),
             strucs_nodeidx_map: HashMap::<HashStrucAddr, NodeIndex<u32>>::new(),
@@ -105,30 +100,40 @@ impl Lib {
     ///
     /// lib.add_struc(struc_a) will also add struc_b
     pub fn add_struc(&mut self, struc: Rc<RefCell<Struc>>) -> Result<(), Box<dyn Error>> {
-        if self.strucs.contains(&HashStrucAddr::new(&struc)) {
+        if self
+            .strucs_nodeidx_map
+            .contains_key(&HashStrucAddr::new(&struc))
+        {
             // Struc has already in Lib, do nothing
         } else {
-            self.strucs.insert(HashStrucAddr::new(&struc));
+            // self.strucs.insert(HashStrucAddr::new(&struc));
             let nodeidx = self.graph.add_node(struc.clone());
             self.strucs_nodeidx_map
                 .insert(HashStrucAddr::new(&struc), nodeidx);
         }
         for r in &struc.borrow().refs {
-            let &noedidx = self
+            let &nodeidx = self
                 .strucs_nodeidx_map
                 .get(&HashStrucAddr::new(&struc))
                 .unwrap();
-            self.add_struc_helper(r.refed_struc.clone(), &noedidx)?;
+            if let Err(e) = self.add_referd_struc(r.refed_struc.clone(), &nodeidx) {
+                self.strucs_nodeidx_map.remove(&HashStrucAddr::new(&struc));
+                self.graph.remove_node(nodeidx);
+                return Err(e);
+            };
         }
         Ok(())
     }
 
-    fn add_struc_helper(
+    fn add_referd_struc(
         &mut self,
         struc: Rc<RefCell<Struc>>,
         from_nodeidx: &NodeIndex<u32>,
     ) -> Result<(), Box<dyn Error>> {
-        if self.strucs.contains(&HashStrucAddr::new(&struc)) {
+        if self
+            .strucs_nodeidx_map
+            .contains_key(&HashStrucAddr::new(&struc))
+        {
             // Struc has already in Lib, do nothing
             let &nodeidx = self
                 .strucs_nodeidx_map
@@ -136,13 +141,16 @@ impl Lib {
                 .unwrap();
             self.graph.add_edge(*from_nodeidx, nodeidx, ());
         } else {
-            self.strucs.insert(HashStrucAddr::new(&struc));
             let nodeidx = self.graph.add_node(struc.clone());
             self.strucs_nodeidx_map
                 .insert(HashStrucAddr::new(&struc), nodeidx);
             self.graph.add_edge(*from_nodeidx, nodeidx, ());
         }
         if is_cyclic_directed(&self.graph) {
+            let has_struct = HashStrucAddr::new(&struc);
+            let &nodeidx = self.strucs_nodeidx_map.get(&has_struct).unwrap();
+            self.strucs_nodeidx_map.remove(&has_struct);
+            self.graph.remove_node(nodeidx);
             return Err(Box::new(gds_error::gds_err("Ref and Struc make a cycle")));
         }
         for r in &struc.borrow().refs {
@@ -150,7 +158,7 @@ impl Lib {
                 .strucs_nodeidx_map
                 .get(&HashStrucAddr::new(&struc))
                 .unwrap();
-            self.add_struc_helper(r.refed_struc.clone(), &nodeidx)?;
+            self.add_referd_struc(r.refed_struc.clone(), &nodeidx)?;
         }
 
         Ok(())
@@ -160,14 +168,14 @@ impl Lib {
     pub fn top_strucs(&self) -> Vec<Rc<RefCell<Struc>>> {
         let mut top_struc = Vec::<Rc<RefCell<Struc>>>::new(); // self.strucs.clone();
         let mut refed_strucs = HashMap::<String, Rc<RefCell<Struc>>>::new();
-        for c in &self.strucs {
-            for refer in &c.0.borrow().refs[..] {
+        for c in &self.strucs_nodeidx_map {
+            for refer in &c.0 .0.borrow().refs[..] {
                 get_struc_from_ref(refer, &mut refed_strucs, -1)
             }
         }
-        for ref c in &self.strucs {
-            if !refed_strucs.contains_key(&c.0.borrow().name) {
-                top_struc.push(c.0.clone());
+        for ref c in &self.strucs_nodeidx_map {
+            if !refed_strucs.contains_key(&c.0 .0.borrow().name) {
+                top_struc.push(c.0 .0.clone());
             }
         }
 
@@ -176,7 +184,10 @@ impl Lib {
 
     /// Get all Strucs
     pub fn all_strucs(&self) -> Vec<Rc<RefCell<Struc>>> {
-        self.strucs.iter().map(|c| c.0.clone()).collect::<Vec<_>>()
+        self.strucs_nodeidx_map
+            .iter()
+            .map(|c| c.0 .0.clone())
+            .collect::<Vec<_>>()
     }
 
     /// Dump Lib and recurse dump Lib's Strucs to gds file bytes
@@ -233,8 +244,8 @@ impl GdsObject for Lib {
         let scaling = self.units / self.precision;
 
         // dump strucs
-        for ref_c in &self.strucs {
-            let struc = ref_c.0.borrow();
+        for ref_c in &self.strucs_nodeidx_map {
+            let struc = ref_c.0 .0.borrow();
             let struc_bytes = struc.to_gds(scaling)?;
             data.extend(struc_bytes);
         }
@@ -263,6 +274,7 @@ mod test_lib {
         struc_2.borrow_mut().refs.push(ref_1);
         struc_1.borrow_mut().refs.push(ref_2);
 
+        // add cross referd struct cause error, lib will be rewinded
         assert!(matches!(lib.add_struc(struc_1), Err(_)));
         assert!(matches!(lib.add_struc(struc_2), Err(_)));
     }
