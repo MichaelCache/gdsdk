@@ -1,5 +1,9 @@
 use petgraph::algo::is_cyclic_directed;
-use petgraph::graph::{DiGraph, NodeIndex};
+use petgraph::graph::{DiGraph, EdgeIndex, NodeIndex};
+use petgraph::Direction;
+
+use multi_index_map::MultiIndexMap;
+
 use std::cell::RefCell;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -39,6 +43,16 @@ impl PartialEq for HashStrucAddr {
 
 impl Eq for HashStrucAddr {}
 
+impl Clone for HashStrucAddr {
+    fn clone(&self) -> Self {
+        HashStrucAddr::new(&self.0)
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.0 = source.0.clone();
+    }
+}
+
 //  TODO:
 // 1. Struc need to knowe about its Lib container, when Struc name changed, Lib need to update
 // 2. try use parrellel process to read and write gds file
@@ -64,7 +78,19 @@ pub struct Lib {
     pub precision: f64,
     pub date: Date,
     pub(self) graph: DiGraph<Rc<RefCell<Struc>>, ()>,
-    strucs_nodeidx_map: HashMap<HashStrucAddr, NodeIndex<u32>>,
+    // strucs_nodeidx_map: HashMap<HashStrucAddr, NodeIndex<u32>>,
+    uniq_struct: MultiIndexUniqStructMap,
+}
+
+#[derive(MultiIndexMap, Debug)]
+#[multi_index_derive(Debug)]
+pub(crate) struct UniqStruct {
+    #[multi_index(hashed_unique)]
+    pub(crate) graph_idx: NodeIndex<u32>,
+    #[multi_index(hashed_unique)]
+    pub(crate) struct_name: String,
+    #[multi_index(hashed_unique)]
+    struct_address: HashStrucAddr,
 }
 
 fn get_struc_from_ref(
@@ -89,7 +115,7 @@ impl Lib {
             precision: 1e-9,
             date: Date::now(),
             graph: DiGraph::<Rc<RefCell<Struc>>, ()>::new(),
-            strucs_nodeidx_map: HashMap::<HashStrucAddr, NodeIndex<u32>>::new(),
+            uniq_struct: MultiIndexUniqStructMap::default(),
         }
     }
 
@@ -100,82 +126,137 @@ impl Lib {
     ///
     /// lib.add_struc(struc_a) will also add struc_b
     pub fn add_struc(&mut self, struc: Rc<RefCell<Struc>>) -> Result<(), Box<dyn Error>> {
-        if self
-            .strucs_nodeidx_map
-            .contains_key(&HashStrucAddr::new(&struc))
+        // different struct object may have same name, gds formt forbidd same name struct in lib
+        if self.diff_struct_has_same_name(&struc) {
+            return Err(Box::new(gds_error::gds_err(&format!(
+                "struc named {} has already existed in lib",
+                struc.borrow().name
+            ))));
+        }
+        // check if struc had been added
+        match self
+            .uniq_struct
+            .get_by_struct_address(&HashStrucAddr::new(&struc))
         {
-            // Struc has already in Lib, do nothing
-        } else {
-            // self.strucs.insert(HashStrucAddr::new(&struc));
-            let nodeidx = self.graph.add_node(struc.clone());
-            self.strucs_nodeidx_map
-                .insert(HashStrucAddr::new(&struc), nodeidx);
+            Some(_) => {
+                // if struct had been added before, just recurly add refered strucs
+                // do not remove it when add refered strucs failed
+                for r in &struc.borrow().refs {
+                    self.add_referd_struc(struc.clone(), r.refed_struc.clone())?
+                }
+                Ok(())
+            }
+            None => {
+                // add struc to graph
+                let nodeidx = self.graph.add_node(struc.clone());
+                self.uniq_struct.insert(UniqStruct {
+                    graph_idx: nodeidx,
+                    struct_name: struc.borrow().name.clone(),
+                    struct_address: HashStrucAddr::new(&struc),
+                });
+                // recursly add refered strucs
+                for r in &struc.borrow().refs {
+                    if let Err(e) = self.add_referd_struc(struc.clone(), r.refed_struc.clone()) {
+                        self.uniq_struct.remove_by_graph_idx(&nodeidx);
+                        self.graph.remove_node(nodeidx);
+                        return Err(e);
+                    };
+                }
+                Ok(())
+            }
         }
-        for r in &struc.borrow().refs {
-            let &nodeidx = self
-                .strucs_nodeidx_map
-                .get(&HashStrucAddr::new(&struc))
-                .unwrap();
-            if let Err(e) = self.add_referd_struc(r.refed_struc.clone(), &nodeidx) {
-                self.strucs_nodeidx_map.remove(&HashStrucAddr::new(&struc));
-                self.graph.remove_node(nodeidx);
-                return Err(e);
-            };
-        }
-        Ok(())
     }
 
     fn add_referd_struc(
         &mut self,
+        from_struct: Rc<RefCell<Struc>>,
         struc: Rc<RefCell<Struc>>,
-        from_nodeidx: &NodeIndex<u32>,
     ) -> Result<(), Box<dyn Error>> {
-        if self
-            .strucs_nodeidx_map
-            .contains_key(&HashStrucAddr::new(&struc))
+        if is_cyclic_directed(&self.graph) {
+            return Err(Box::new(gds_error::gds_err(&"circle refer found")));
+        }
+        if self.diff_struct_has_same_name(&struc) {
+            return Err(Box::new(gds_error::gds_err(&format!(
+                "struc named {} has already existed in lib",
+                struc.borrow().name
+            ))));
+        }
+        let from_nodeidx = self
+            .uniq_struct
+            .get_by_struct_address(&HashStrucAddr::new(&from_struct))
+            .unwrap()
+            .graph_idx;
+        // try add edge from_struc to struc, if struc had been added
+        if let Some(uniq_struct) = self
+            .uniq_struct
+            .get_by_struct_address(&HashStrucAddr::new(&struc))
         {
-            // Struc has already in Lib, do nothing
-            let &nodeidx = self
-                .strucs_nodeidx_map
-                .get(&HashStrucAddr::new(&struc))
-                .unwrap();
-            self.graph.add_edge(*from_nodeidx, nodeidx, ());
+            let nodeidx = uniq_struct.graph_idx;
+            let mut edge_id: Option<EdgeIndex> = None;
+            if self.graph.find_edge(from_nodeidx, nodeidx).is_none() {
+                edge_id = Some(self.graph.add_edge(from_nodeidx, nodeidx, ()));
+            }
+            for r in &struc.borrow().refs {
+                if let Err(e) = self.add_referd_struc(struc.clone(), r.refed_struc.clone()) {
+                    if let Some(edge_idx) = edge_id {
+                        self.graph.remove_edge(edge_idx);
+                    }
+                    return Err(e);
+                };
+            }
         } else {
             let nodeidx = self.graph.add_node(struc.clone());
-            self.strucs_nodeidx_map
-                .insert(HashStrucAddr::new(&struc), nodeidx);
-            self.graph.add_edge(*from_nodeidx, nodeidx, ());
-        }
-        if is_cyclic_directed(&self.graph) {
-            let has_struct = HashStrucAddr::new(&struc);
-            let &nodeidx = self.strucs_nodeidx_map.get(&has_struct).unwrap();
-            self.strucs_nodeidx_map.remove(&has_struct);
-            self.graph.remove_node(nodeidx);
-            return Err(Box::new(gds_error::gds_err("Ref and Struc make a cycle")));
-        }
-        for r in &struc.borrow().refs {
-            let &nodeidx = self
-                .strucs_nodeidx_map
-                .get(&HashStrucAddr::new(&struc))
-                .unwrap();
-            self.add_referd_struc(r.refed_struc.clone(), &nodeidx)?;
+            self.uniq_struct.insert(UniqStruct {
+                graph_idx: nodeidx,
+                struct_name: struc.borrow().name.clone(),
+                struct_address: HashStrucAddr::new(&struc),
+            });
+            self.graph.add_edge(from_nodeidx, nodeidx, ());
+
+            for r in &struc.borrow().refs {
+                if let Err(e) = self.add_referd_struc(struc.clone(), r.refed_struc.clone()) {
+                    if let Some(uniq_struct) = self.uniq_struct.remove_by_graph_idx(&nodeidx) {
+                        // remove node will remove all edges with node
+                        self.graph.remove_node(uniq_struct.graph_idx);
+                    }
+
+                    return Err(e);
+                };
+            }
         }
 
         Ok(())
     }
 
-    /// Get Strucs not refered by any Ref
-    pub fn top_strucs(&self) -> Vec<Rc<RefCell<Struc>>> {
-        let mut top_struc = Vec::<Rc<RefCell<Struc>>>::new(); // self.strucs.clone();
-        let mut refed_strucs = HashMap::<String, Rc<RefCell<Struc>>>::new();
-        for c in &self.strucs_nodeidx_map {
-            for refer in &c.0 .0.borrow().refs[..] {
-                get_struc_from_ref(refer, &mut refed_strucs, -1)
+    fn diff_struct_has_same_name(&self, struc: &Rc<RefCell<Struc>>) -> bool {
+        if let Some(same_name_struc) = self.uniq_struct.get_by_struct_name(&struc.borrow().name) {
+            if same_name_struc.struct_address != HashStrucAddr::new(&struc) {
+                return true;
             }
         }
-        for ref c in &self.strucs_nodeidx_map {
-            if !refed_strucs.contains_key(&c.0 .0.borrow().name) {
-                top_struc.push(c.0 .0.clone());
+        return false;
+    }
+
+    /// Get Strucs not refered by any Ref
+    pub fn top_strucs(&self) -> Vec<Rc<RefCell<Struc>>> {
+        let mut top_struc = Vec::<Rc<RefCell<Struc>>>::new();
+
+        for node in self.graph.node_indices() {
+            if !self
+                .graph
+                .neighbors_directed(node, Direction::Incoming)
+                .next()
+                .is_some()
+            {
+                // TODO:add struct to top_struc
+                top_struc.push(
+                    self.uniq_struct
+                        .get_by_graph_idx(&node)
+                        .unwrap()
+                        .struct_address
+                        .0
+                        .clone(),
+                );
             }
         }
 
@@ -184,9 +265,9 @@ impl Lib {
 
     /// Get all Strucs
     pub fn all_strucs(&self) -> Vec<Rc<RefCell<Struc>>> {
-        self.strucs_nodeidx_map
+        self.uniq_struct
             .iter()
-            .map(|c| c.0 .0.clone())
+            .map(|c| c.1.struct_address.0.clone())
             .collect::<Vec<_>>()
     }
 
@@ -244,9 +325,9 @@ impl GdsObject for Lib {
         let scaling = self.units / self.precision;
 
         // dump strucs
-        for ref_c in &self.strucs_nodeidx_map {
-            let struc = ref_c.0 .0.borrow();
-            let struc_bytes = struc.to_gds(scaling)?;
+        for (_idx, uniq_struc) in self.uniq_struct.iter() {
+            let ref_c = uniq_struc.struct_address.0.clone();
+            let struc_bytes = ref_c.borrow().to_gds(scaling)?;
             data.extend(struc_bytes);
         }
 
