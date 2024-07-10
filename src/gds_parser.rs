@@ -92,7 +92,7 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
 
     // step.3 add all struc to lib
     for c in name_struc_map{
-        lib.add_struc(c.1)?;
+        lib.add_struc(&c.1)?;
     }
 
     Ok(lib)

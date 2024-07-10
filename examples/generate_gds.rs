@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     struc_a.borrow_mut().refs.push(struc_b_ref);
 
-    let _ = lib.add_struc(struc_a);
+    let _ = lib.add_struc(&struc_a);
 
     let gds_data = lib.gds_bytes()?;
 

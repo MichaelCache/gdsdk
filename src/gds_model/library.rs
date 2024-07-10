@@ -7,7 +7,7 @@ use multi_index_map::MultiIndexMap;
 use std::cell::RefCell;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::{collections::HashMap, rc::Rc};
+use std::rc::Rc;
 
 use super::*;
 use crate::gds_error;
@@ -52,7 +52,6 @@ impl Clone for HashStrucAddr {
         self.0 = source.0.clone();
     }
 }
-
 //  TODO:
 // 1. Struc need to knowe about its Lib container, when Struc name changed, Lib need to update
 // 2. try use parrellel process to read and write gds file
@@ -93,19 +92,19 @@ pub(crate) struct UniqStruct {
     struct_address: HashStrucAddr,
 }
 
-fn get_struc_from_ref(
-    refer: &Ref,
-    uniq_strucs: &mut HashMap<String, Rc<RefCell<Struc>>>,
-    depth: i64,
-) {
-    let struc = refer.refed_struc.borrow();
-    if !uniq_strucs.contains_key(&struc.name) {
-        uniq_strucs.insert(struc.name.clone(), refer.refed_struc.clone());
-    }
-    for r in &struc.refs {
-        get_struc_from_ref(r, uniq_strucs, if depth > 0 { depth - 1 } else { depth });
-    }
-}
+// fn get_struc_from_ref(
+//     refer: &Ref,
+//     uniq_strucs: &mut HashMap<String, Rc<RefCell<Struc>>>,
+//     depth: i64,
+// ) {
+//     let struc = refer.refed_struc.borrow();
+//     if !uniq_strucs.contains_key(&struc.name) {
+//         uniq_strucs.insert(struc.name.clone(), refer.refed_struc.clone());
+//     }
+//     for r in &struc.refs {
+//         get_struc_from_ref(r, uniq_strucs, if depth > 0 { depth - 1 } else { depth });
+//     }
+// }
 
 impl Lib {
     pub fn new(libname: &str) -> Self {
@@ -125,7 +124,7 @@ impl Lib {
     /// struc_a has a ref which refer to struc_b
     ///
     /// lib.add_struc(struc_a) will also add struc_b
-    pub fn add_struc(&mut self, struc: Rc<RefCell<Struc>>) -> Result<(), Box<dyn Error>> {
+    pub fn add_struc(&mut self, struc: &Rc<RefCell<Struc>>) -> Result<(), Box<dyn Error>> {
         // different struct object may have same name, gds formt forbidd same name struct in lib
         if self.diff_struct_has_same_name(&struc) {
             return Err(Box::new(gds_error::gds_err(&format!(
@@ -345,7 +344,7 @@ impl GdsObject for Lib {
 mod test_lib {
     use super::*;
     #[test]
-    fn test_lib() {
+    fn test_lib_add_cross_refer_struct_error() {
         let mut lib = Lib::new("test");
         // make cross ref
         let struc_1 = Rc::new(RefCell::new(Struc::new("test_1")));
@@ -356,7 +355,48 @@ mod test_lib {
         struc_1.borrow_mut().refs.push(ref_2);
 
         // add cross referd struct cause error, lib will be rewinded
-        assert!(matches!(lib.add_struc(struc_1), Err(_)));
-        assert!(matches!(lib.add_struc(struc_2), Err(_)));
+        assert!(matches!(lib.add_struc(&struc_1), Err(_)));
+        assert!(matches!(lib.add_struc(&struc_2), Err(_)));
+        assert!(lib.all_strucs().len() == 0);
+    }
+    #[test]
+    fn test_lib_add_same_name_diff_struct_error() {
+        let mut lib = Lib::new("test");
+        let struc_1 = Rc::new(RefCell::new(Struc::new("test_1")));
+        let struc_2 = Rc::new(RefCell::new(Struc::new("test_1")));
+        assert!(matches!(lib.add_struc(&struc_1), Ok(_)));
+        assert!(matches!(lib.add_struc(&struc_2), Err(_)));
+        assert!(lib.all_strucs().len() == 1);
+    }
+
+    #[test]
+    fn test_lib_top_struct() {
+        let mut lib = Lib::new("test");
+        let struc_1 = Rc::new(RefCell::new(Struc::new("test_1")));
+        let struc_2 = Rc::new(RefCell::new(Struc::new("test_2")));
+        let struc_3 = Rc::new(RefCell::new(Struc::new("test_3")));
+        let struc_4 = Rc::new(RefCell::new(Struc::new("test_4")));
+
+        // struc_1 --> struc_3
+        let ref_1 = Ref::new(&struc_3);
+        struc_1.borrow_mut().refs.push(ref_1);
+        // struc_2 --> struc_3
+        let ref_2 = Ref::new(&struc_3);
+        struc_2.borrow_mut().refs.push(ref_2);
+        // struc_3 --> struc_4
+        let ref_3 = Ref::new(&struc_4);
+        struc_3.borrow_mut().refs.push(ref_3);
+
+        assert!(matches!(lib.add_struc(&struc_1), Ok(_)));
+        assert!(matches!(lib.add_struc(&struc_2), Ok(_)));
+        assert!(matches!(lib.add_struc(&struc_3), Ok(_)));
+        assert!(matches!(lib.add_struc(&struc_4), Ok(_)));
+        let top_strucs = lib.top_strucs();
+        assert!(top_strucs.len() == 2);
+
+        assert!(top_strucs.iter().any(|v| Rc::ptr_eq(&v, &struc_1)));
+        assert!(top_strucs.iter().any(|v| Rc::ptr_eq(&v, &struc_2)));
+
+        assert!(lib.all_strucs().len() == 4);
     }
 }

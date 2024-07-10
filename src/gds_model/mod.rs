@@ -42,9 +42,9 @@ mod test_gds_model {
         let ref2 = Ref::new(&struc2);
         struc2.borrow_mut().refs.push(ref3);
         struc1.borrow_mut().refs.push(ref2);
-        let _ = gds_lib.add_struc(struc1.clone());
-        let _ = gds_lib.add_struc(struc2);
-        let _ = gds_lib.add_struc(struc3);
+        let _ = gds_lib.add_struc(&struc1);
+        let _ = gds_lib.add_struc(&struc2);
+        let _ = gds_lib.add_struc(&struc3);
 
         let top_struc = gds_lib.top_strucs();
         assert_eq!(top_struc.len(), 1);
