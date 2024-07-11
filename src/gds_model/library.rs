@@ -1,5 +1,6 @@
 use petgraph::algo::is_cyclic_directed;
-use petgraph::graph::{DiGraph, EdgeIndex, NodeIndex};
+use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::stable_graph::StableDiGraph;
 use petgraph::Direction;
 
 use multi_index_map::MultiIndexMap;
@@ -76,7 +77,7 @@ pub struct Lib {
     /// default is 1e-9
     pub precision: f64,
     pub date: Date,
-    pub(self) graph: DiGraph<Rc<RefCell<Struc>>, ()>,
+    pub(self) graph: StableDiGraph<Rc<RefCell<Struc>>, ()>,
     // strucs_nodeidx_map: HashMap<HashStrucAddr, NodeIndex<u32>>,
     uniq_struct: MultiIndexUniqStructMap,
 }
@@ -113,7 +114,7 @@ impl Lib {
             units: 1e-6,
             precision: 1e-9,
             date: Date::now(),
-            graph: DiGraph::<Rc<RefCell<Struc>>, ()>::new(),
+            graph: StableDiGraph::<Rc<RefCell<Struc>>, ()>::new(),
             uniq_struct: MultiIndexUniqStructMap::default(),
         }
     }
@@ -225,6 +226,17 @@ impl Lib {
         }
 
         Ok(())
+    }
+
+    /// Remove Struc from Library, won't remove refered strucs
+    ///  
+    pub fn remove_struc(&mut self, struc: &Rc<RefCell<Struc>>) {
+        if let Some(uniq_struc) = self
+            .uniq_struct
+            .remove_by_struct_address(&HashStrucAddr::new(&struc))
+        {
+            self.graph.remove_node(uniq_struc.graph_idx);
+        }
     }
 
     fn diff_struct_has_same_name(&self, struc: &Rc<RefCell<Struc>>) -> bool {
@@ -398,5 +410,22 @@ mod test_lib {
         assert!(top_strucs.iter().any(|v| Rc::ptr_eq(&v, &struc_2)));
 
         assert!(lib.all_strucs().len() == 4);
+    }
+
+    #[test]
+    fn test_lib_remove_struc() {
+        let mut lib = Lib::new("test");
+        let struc_1 = Rc::new(RefCell::new(Struc::new("test_1")));
+        let struc_2 = Rc::new(RefCell::new(Struc::new("test_2")));
+        let ref_1 = Ref::new(&struc_2);
+        struc_1.borrow_mut().refs.push(ref_1);
+        assert!(matches!(lib.add_struc(&struc_1), Ok(_)));
+        assert!(lib.top_strucs().len() == 1);
+        assert!(lib.all_strucs().len() == 2);
+        // only remove struct1, now struc2 is top struc
+        lib.remove_struc(&struc_1);
+        let top_s = lib.top_strucs();
+        assert!(top_s.len() == 1);
+        assert!(Rc::ptr_eq(&top_s[0], &struc_2));
     }
 }
