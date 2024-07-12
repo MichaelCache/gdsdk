@@ -45,7 +45,7 @@ pub struct Text {
     pub anchor: TextAnchor,
     pub rotation: f64, // in radians
     pub magnification: f64,
-    pub x_reflection: bool,
+    pub x_reflection: bool, // reflection across the x axis.
     pub repetition: Repetition,
     pub property: Property,
 }

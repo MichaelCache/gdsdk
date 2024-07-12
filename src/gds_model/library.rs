@@ -259,7 +259,6 @@ impl Lib {
                 .next()
                 .is_some()
             {
-                // TODO:add struct to top_struc
                 top_struc.push(
                     self.uniq_struct
                         .get_by_graph_idx(&node)

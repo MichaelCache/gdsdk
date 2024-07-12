@@ -1,6 +1,7 @@
 use super::*;
 use crate::gds_error;
 use crate::gds_record;
+use crate::gds_writer;
 
 #[repr(i16)]
 #[derive(Debug)]
@@ -53,6 +54,8 @@ pub struct Path {
     pub end_type: PathEndType,
     pub points: Vec<Points>,
     pub property: Property,
+    pub extend_begin: f64,
+    pub extend_end: f64,
 }
 
 impl GdsObject for Path {
@@ -82,12 +85,14 @@ impl GdsObject for Path {
         data.extend(8_i16.to_be_bytes());
         data.extend(gds_record::WIDTH);
         data.extend((f64::round(self.width * scaling) as u32).to_be_bytes());
-        // TODO: if end_type == 4, which means path end is in extend mode, need to export extend data
+        // if end_type == 4, which means path end is in extend mode, need to export extend data
         if let PathEndType::SquareExtend = self.end_type {
-            gds_error::gds_err(&format!(
-                "end_type == 4 is not support for path now: {:#?}",
-                &self
-            ));
+            data.extend(8_i16.to_be_bytes());
+            data.extend(gds_record::BGNEXTN);
+            data.extend((f64::round(self.extend_begin * scaling) as u32).to_be_bytes());
+            data.extend(8_i16.to_be_bytes());
+            data.extend(gds_record::ENDEXTN);
+            data.extend((f64::round(self.extend_end * scaling) as u32).to_be_bytes());
         }
 
         // points
