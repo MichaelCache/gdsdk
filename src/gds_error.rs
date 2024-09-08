@@ -25,3 +25,10 @@ impl Error for GDSIIError {
         Some(self)
     }
 }
+
+#[macro_export]
+macro_rules! gds_err {
+    ( $x:expr ) => {{
+        gds_err(format!("{}:{} {}", file!(), line!(), $x).as_str())
+    }};
+}

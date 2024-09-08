@@ -1,7 +1,6 @@
 use super::*;
 use crate::gds_error;
 use crate::gds_record;
-use crate::gds_writer;
 
 #[repr(i16)]
 #[derive(Debug)]

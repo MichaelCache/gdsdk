@@ -14,6 +14,7 @@ mod gds_writer;
 use std::error::Error;
 use std::fs::read;
 use std::path;
+use std::sync::{Arc, RwLock};
 
 /// read gds file return gds lib
 pub fn read_gdsii<T: AsRef<path::Path>>(
@@ -39,7 +40,7 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
     // slice file content to gds records
     let mut idx: usize = 0;
     let mut record_len: usize;
-    let mut records: Vec<gds_record::Record> = Vec::new();
+    let records: Arc<RwLock<Vec<gds_record::Record>>> = Arc::new(RwLock::new(Vec::new()));
     while idx < byte_len {
         // each gds record first 2 byte stored record byte length
         record_len = u16::from_be_bytes(match buff[idx..idx + 2].try_into() {
@@ -63,7 +64,7 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
         }
 
         match gds_reader::record_type(&buff[idx..idx + record_len]) {
-            Ok(r) => records.push(r),
+            Ok(r) => records.write().unwrap().push(r),
             Err(err) => {
                 return Err(Box::new(gds_error::gds_err(&format!(
                     "parse error at byte offset range {:#08x}:{:#08x}: {}",
@@ -75,19 +76,19 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
         }
 
         // ENDLIB marks the end of a stream format file
-        if let Some(gds_record::Record::EndLib) = records.last() {
+        if let Some(gds_record::Record::EndLib) = records.read().unwrap().last() {
             break;
         }
 
         idx += record_len;
     }
 
-    if records.len() == 0 {
+    if records.read().unwrap().len() == 0 {
         return Result::Err(Box::new(gds_error::gds_err(
             "not valid gds file, no any valid records found",
         )));
     }
 
     // transfer gds record data to gds object
-    Ok(gds_parser::parse_gds(&records)?)
+    Ok(gds_parser::parse_gds(records)?)
 }

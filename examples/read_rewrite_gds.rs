@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     for file in args {
         match gdsdk::read_gdsii(&file) {
             Ok(lib) => {
-                println!("{:#?}", lib);
+                // println!("{:#?}", lib);
                 // write gds data back
                 let gds_bytes = lib.gds_bytes()?;
                 let mut file = std::fs::File::create("new.gds")?;

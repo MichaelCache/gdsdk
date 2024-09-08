@@ -1,5 +1,5 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::RwLock;
 
 use super::*;
 use crate::gds_record;
@@ -9,7 +9,7 @@ use crate::gds_writer;
 /// refer Gds Structure
 #[derive(Debug)]
 pub struct Ref {
-    pub refed_struc: Rc<RefCell<Struc>>,
+    pub refed_struc: Arc<RwLock<Struc>>,
     pub reflection_x: bool,
     // pub abs_magnific: bool,
     pub magnific: f64,
@@ -24,7 +24,7 @@ pub struct Ref {
 }
 
 impl Ref {
-    pub fn new(refto: &Rc<RefCell<Struc>>) -> Self {
+    pub fn new(refto: &Arc<RwLock<Struc>>) -> Self {
         Ref {
             refed_struc: refto.clone(),
             reflection_x: false,
@@ -61,7 +61,7 @@ impl GdsObject for Ref {
         let mut struc_name = Vec::<u8>::new();
         struc_name.extend(gds_record::SNAME);
 
-        let struc = &*(self.refed_struc.borrow());
+        let struc = &*(self.refed_struc.read().unwrap());
         let mut name = gds_writer::ascii_string_to_be_bytes(&struc.name);
         if !name.len().is_power_of_two() {
             name.push(0);
@@ -173,7 +173,7 @@ impl FakeRef {
         }
     }
 
-    pub(crate) fn create_true_ref(self, struc: &Rc<RefCell<Struc>>) -> Ref {
+    pub(crate) fn create_true_ref(self, struc: &Arc<RwLock<Struc>>) -> Ref {
         let mut struc_ref = Ref::new(struc);
         struc_ref.reflection_x = self.reflection_x;
         struc_ref.magnific = self.magnific;

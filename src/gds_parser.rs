@@ -1,39 +1,49 @@
+use crate::gds_err;
+
 use super::gds_error::*;
 use super::gds_model;
 use super::gds_model::*;
 use super::gds_record::*;
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::slice::Iter;
 use std::error::Error;
+use threadpool;
+use std::sync::{Arc,RwLock, mpsc::channel};
+use num_cpus;
 
-pub fn parse_gds(records: &[Record]) -> Result<Box<Lib>, Box<dyn Error>> {
-    // let mut lib: Box<Lib> = Box::new(Lib::new(""));
-    let mut iter = records.iter();
-    while let Some(record) = iter.next() {
-        match record {
-            Record::Header { version: _ } => {}
-            Record::BgnLib(_) =>{
-                let lib = parse_lib(&mut iter)?;
-                return Ok(lib);
-            }
-            Record::EndLib => {}
-            _ => return Err(Box::new(gds_err("not valid gds lib"))),
-        }
+pub fn parse_gds(records: Arc<RwLock<Vec<Record>>>) -> Result<Box<Lib>, Box<dyn Error>> {
+    // first record should be gds header with version info
+    if let Some(Record::Header{version:ver}) = records.read().unwrap().first() {
+        println!("read GDSII version: {}", ver);
+    }
+    else {
+        return Err(Box::new(gds_err("GDSII version not found")));
     }
 
-    return Err( Box::new(gds_err("no valid gds lib found")));
+    // second record should be BgnLib, all data between BgnLib and EndLib is belong to this lib
+    // which EndLib should be the last record
+    if let Some(Record::BgnLib(_)) = records.read().unwrap().get(1){}
+    else {
+        return Err( Box::new(gds_err("no valid gds lib found")));
+    }
+    if let Record::EndLib = records.read().unwrap().last().unwrap(){}else{
+        return Err( Box::new(gds_err("no valid gds lib found")));
+    }
+
+    // let lib_slice = &records[1..];
+    
+    let lib = parse_lib(records)?;
+    return Ok(lib);
+    
 }
 
-fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
+fn parse_lib(records: Arc<RwLock<Vec<Record>>>) -> Result<Box<Lib>, Box<dyn Error>> {
     let mut lib = Box::new(Lib::new(""));
     let mut factor = 0.0;
-    let mut name_struc_map = HashMap::new();
-    let mut struc_ref_strucname_map =HashMap::<String, Vec::<gds_model::FakeRef>>::new();
-    // step.1 parse all stuc, save to name_stuc_map
-    while let Some(record) = iter.next() {
-        match record {
+    let mut strucs_id_range = Vec::<(Option<i64>, Option<i64>)>::new();
+    // 
+    for (idx, rec) in records.read().unwrap().iter().enumerate() {
+        match rec {
             Record::BgnLib(date) => lib.date = date.clone(), //modification time of lib, and marks beginning of library
             Record::LibName(s) => lib.name = s.to_string(),
             Record::Units {
@@ -51,10 +61,69 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
                 lib.precision = *precision;
                 factor = *unit_in_meter;
             }
-            Record::BgnStr(date) => {
-                let (struc, struc_fakerefs) = parse_struc(iter, factor)?;
-                struc.borrow_mut().date = date.clone();
-                let struc_name = struc.borrow().name.clone();
+            // record gds structure start and end range
+            Record::BgnStr(_) => {
+                strucs_id_range.push((None, None));
+                strucs_id_range.last_mut().unwrap().0 = Some(idx as i64);
+            }
+            Record::EndStr => {  
+                    strucs_id_range.last_mut().unwrap().1 = Some(idx as i64); 
+            }
+            Record::EndLib => {
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    // check gds structure range valid
+    // which means: 1. all range idx is Some(i64). 2. range not overlap
+    for i in 0..strucs_id_range.len() {
+        let (start, end) = strucs_id_range[i];
+        if start.is_none() || end.is_none() {
+            return Err(Box::new(gds_err!("Invalid gds structure range found")));
+        }
+
+        if i>0 {
+             if let (Some(pre_start), Some(pre_end)) = strucs_id_range[i-1]{
+                if pre_start.max(start.unwrap()) < pre_end.min(end.unwrap()) {
+                    return Err(Box::new(gds_err!(
+                        "Gds structure range overlap"
+                    )));
+                }
+             }   
+        }
+    }
+
+    // parse all structure in multi thread 
+    let pool = threadpool::ThreadPool::new(num_cpus::get());
+    let (tx, rx) = channel();
+    for i in 0..strucs_id_range.len() {
+        let (start, end) = strucs_id_range[i];
+        let v = Arc::clone(&records);
+        let tx = tx.clone();
+        pool.execute(move || {
+            let v = v.read().unwrap();
+            let mut iter = v[start.unwrap() as usize..end.unwrap() as usize].iter();
+            let res = parse_struc( &mut iter, factor);
+            tx.send(res).unwrap();
+        })
+    }
+
+    pool.join();
+    drop(tx);
+
+    // step.1 parse all stuc, save to name_stuc_map
+    let mut name_struc_map = HashMap::new();
+    let mut struc_ref_strucname_map =HashMap::<String, Vec::<gds_model::FakeRef>>::new();
+    for _ in 0..strucs_id_range.len() {
+        let res = rx.recv().unwrap();
+        if res.is_err() {
+            return Err(res.err().unwrap());
+        }else {
+            let (struc, struc_fakerefs) = res.unwrap();
+            // struc.borrow_mut().date = date.clone();
+                let struc_name = struc.read().unwrap().name.clone();
                 if name_struc_map.contains_key(&struc_name) {
                     return Err(Box::new(gds_err(&std::format!(
                         "Duplicated gds Structure \"{}\" found",
@@ -65,13 +134,6 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
                 name_struc_map.insert(struc_name, struc);
 
                 struc_ref_strucname_map.insert(struc_name_cp, struc_fakerefs);
-            }
-            Record::EndLib => {
-                break;
-            }
-            other => {
-                println!("get record from lib {:#?}", other);
-            }
         }
     }
 
@@ -79,7 +141,7 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
     for c in struc_ref_strucname_map {
         let cur_struc_name = &c.0;
         let cur_struc = name_struc_map.get(cur_struc_name).unwrap().clone();
-        let mut mut_cur_struc = cur_struc.borrow_mut();
+        let mut mut_cur_struc = cur_struc.write().unwrap();
         for struc_fakeref in c.1{
             // ref refer to struc
             let ref_struc_name = &struc_fakeref.refed_struc_name;
@@ -101,21 +163,21 @@ fn parse_lib(iter: &mut Iter<'_, Record>) -> Result<Box<Lib>, Box<dyn Error>> {
 fn parse_struc(
     iter: &mut Iter<'_, Record>,
     factor: f64
-) -> Result<(Rc<RefCell<Struc>>,Vec::<gds_model::FakeRef>), Box<dyn Error>> {
-    let struc = Rc::new(RefCell::new(Struc::new("")));
-    // let mut mut_struc = struc.borrow_mut();
+) -> Result<(Arc<RwLock<Struc>>,Vec::<gds_model::FakeRef>), Box<dyn Error+Send+Sync>> {
+    let struc_ptr = Arc::new(RwLock::new(Struc::new("")));
     let mut ref_refname = Vec::<gds_model::FakeRef>::new();
+    let mut struc = struc_ptr.write().unwrap();
     while let Some(record) = iter.next() {
         match record {
-            Record::BgnStr(date) => struc.borrow_mut().date = date.clone(), // last modification time of a structure and marks the beginning of a structure
-            Record::StrName(s) => struc.borrow_mut().name = s.to_string(),
+            Record::BgnStr(date) => struc.date = date.clone(), // last modification time of a structure and marks the beginning of a structure
+            Record::StrName(s) => struc.name = s.to_string(),
             Record::Boundary | Record::Box => {
                 let polygon = parse_polygon(iter, factor)?;
-                struc.borrow_mut().polygons.push(polygon);
+                struc.polygons.push(polygon);
             }
             Record::Path => {
                 let path = parse_path(iter, factor)?;
-                struc.borrow_mut().paths.push(path);
+                struc.paths.push(path);
             }
             Record::StrRef => {
                 let sref = parse_sref(iter, factor)?;
@@ -123,7 +185,7 @@ fn parse_struc(
             }
             Record::Text => {
                 let text = parse_text(iter, factor)?;
-                struc.borrow_mut().label.push(text)
+                struc.label.push(text)
             }
             Record::AryRef => {
                 let aref  = parse_aref(iter, factor)?;
@@ -137,11 +199,12 @@ fn parse_struc(
             }
         }
     }
+    drop(struc);
 
-    Ok((struc, ref_refname))
+    Ok((struc_ptr, ref_refname))
 }
 
-fn parse_text(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Text, Box<dyn Error>> {
+fn parse_text(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Text, Box<dyn Error+Send+Sync>> {
     let mut text = Text::default();
     let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
@@ -211,7 +274,7 @@ fn parse_text(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Text, Box<dyn 
     Ok(text)
 }
 
-fn parse_polygon(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Polygon, Box<dyn Error>> {
+fn parse_polygon(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Polygon, Box<dyn Error+Send+Sync>> {
     let mut polygon = Polygon::default();
     let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
@@ -244,7 +307,7 @@ fn parse_polygon(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Polygon, Bo
     Ok(polygon)
 }
 
-fn parse_path(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Path, Box<dyn Error>> {
+fn parse_path(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Path, Box<dyn Error+Send+Sync>> {
     let mut path = Path::default();
     let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
@@ -276,7 +339,7 @@ fn parse_path(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Path, Box<dyn 
     Ok(path)
 }
 
-fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<FakeRef, Box<dyn Error>> {
+fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<FakeRef, Box<dyn Error+Send+Sync>> {
     let mut sref = FakeRef::new();
     let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {
@@ -317,7 +380,7 @@ fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<FakeRef, Box<d
     Ok(sref)
 }
 
-fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<FakeRef, Box<dyn Error>> {
+fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<FakeRef, Box<dyn Error+Send+Sync>> {
     let mut aref = FakeRef::new();
     let mut cur_prokey : Option<i16>= None;
     while let Some(record) = iter.next() {

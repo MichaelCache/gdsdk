@@ -5,28 +5,27 @@ use petgraph::Direction;
 
 use multi_index_map::MultiIndexMap;
 
-use std::cell::RefCell;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 
 use super::*;
 use crate::gds_error;
 use crate::{gds_record, gds_writer};
 
 #[derive(Debug)]
-struct HashStrucAddr(Rc<RefCell<Struc>>);
+struct HashStrucAddr(Arc<RwLock<Struc>>);
 
 impl HashStrucAddr {
-    pub fn new(str: &Rc<RefCell<Struc>>) -> Self {
-        HashStrucAddr(Rc::clone(str))
+    pub fn new(str: &Arc<RwLock<Struc>>) -> Self {
+        HashStrucAddr(Arc::clone(str))
     }
 }
 
 impl Hash for HashStrucAddr {
     // use Struc obj address as hash
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let borrow = self.0.borrow();
+        let borrow = self.0.read().unwrap();
         (&*borrow as *const _ as usize).hash(state)
     }
 }
@@ -34,8 +33,8 @@ impl Hash for HashStrucAddr {
 impl PartialEq for HashStrucAddr {
     // only use Struc obj address for compare in hash
     fn eq(&self, other: &Self) -> bool {
-        let borrow = self.0.borrow();
-        let rhs = other.0.borrow();
+        let borrow = self.0.read().unwrap();
+        let rhs = other.0.read().unwrap();
         let this_addr = &*borrow as *const _ as usize;
         let rhs_addr = &*rhs as *const _ as usize;
         PartialEq::eq(&this_addr, &rhs_addr)
@@ -77,7 +76,7 @@ pub struct Lib {
     /// default is 1e-9
     pub precision: f64,
     pub date: Date,
-    pub(self) graph: StableDiGraph<Rc<RefCell<Struc>>, ()>,
+    pub(self) graph: StableDiGraph<Arc<RwLock<Struc>>, ()>,
     // strucs_nodeidx_map: HashMap<HashStrucAddr, NodeIndex<u32>>,
     uniq_struct: MultiIndexUniqStructMap,
 }
@@ -93,20 +92,6 @@ pub(crate) struct UniqStruct {
     struct_address: HashStrucAddr,
 }
 
-// fn get_struc_from_ref(
-//     refer: &Ref,
-//     uniq_strucs: &mut HashMap<String, Rc<RefCell<Struc>>>,
-//     depth: i64,
-// ) {
-//     let struc = refer.refed_struc.borrow();
-//     if !uniq_strucs.contains_key(&struc.name) {
-//         uniq_strucs.insert(struc.name.clone(), refer.refed_struc.clone());
-//     }
-//     for r in &struc.refs {
-//         get_struc_from_ref(r, uniq_strucs, if depth > 0 { depth - 1 } else { depth });
-//     }
-// }
-
 impl Lib {
     pub fn new(libname: &str) -> Self {
         Lib {
@@ -114,7 +99,7 @@ impl Lib {
             units: 1e-6,
             precision: 1e-9,
             date: Date::now(),
-            graph: StableDiGraph::<Rc<RefCell<Struc>>, ()>::new(),
+            graph: StableDiGraph::<Arc<RwLock<Struc>>, ()>::new(),
             uniq_struct: MultiIndexUniqStructMap::default(),
         }
     }
@@ -125,12 +110,12 @@ impl Lib {
     /// struc_a has a ref which refer to struc_b
     ///
     /// lib.add_struc(struc_a) will also add struc_b
-    pub fn add_struc(&mut self, struc: &Rc<RefCell<Struc>>) -> Result<(), Box<dyn Error>> {
+    pub fn add_struc(&mut self, struc: &Arc<RwLock<Struc>>) -> Result<(), Box<dyn Error>> {
         // different struct object may have same name, gds formt forbidd same name struct in lib
         if self.diff_struct_has_same_name(&struc) {
             return Err(Box::new(gds_error::gds_err(&format!(
                 "struc named {} has already existed in lib",
-                struc.borrow().name
+                struc.read().unwrap().name
             ))));
         }
         // check if struc had been added
@@ -139,9 +124,9 @@ impl Lib {
             .get_by_struct_address(&HashStrucAddr::new(&struc))
         {
             Some(_) => {
-                // if struct had been added before, just recurly add refered strucs
+                // if struct had been added before, just recursively add refered strucs
                 // do not remove it when add refered strucs failed
-                for r in &struc.borrow().refs {
+                for r in &struc.read().unwrap().refs {
                     self.add_referd_struc(struc.clone(), r.refed_struc.clone())?
                 }
                 Ok(())
@@ -151,11 +136,11 @@ impl Lib {
                 let nodeidx = self.graph.add_node(struc.clone());
                 self.uniq_struct.insert(UniqStruct {
                     graph_idx: nodeidx,
-                    struct_name: struc.borrow().name.clone(),
+                    struct_name: struc.read().unwrap().name.clone(),
                     struct_address: HashStrucAddr::new(&struc),
                 });
                 // recursly add refered strucs
-                for r in &struc.borrow().refs {
+                for r in &struc.read().unwrap().refs {
                     if let Err(e) = self.add_referd_struc(struc.clone(), r.refed_struc.clone()) {
                         self.uniq_struct.remove_by_graph_idx(&nodeidx);
                         self.graph.remove_node(nodeidx);
@@ -169,8 +154,8 @@ impl Lib {
 
     fn add_referd_struc(
         &mut self,
-        from_struct: Rc<RefCell<Struc>>,
-        struc: Rc<RefCell<Struc>>,
+        from_struct: Arc<RwLock<Struc>>,
+        struc: Arc<RwLock<Struc>>,
     ) -> Result<(), Box<dyn Error>> {
         if is_cyclic_directed(&self.graph) {
             return Err(Box::new(gds_error::gds_err(&"circle refer found")));
@@ -178,7 +163,7 @@ impl Lib {
         if self.diff_struct_has_same_name(&struc) {
             return Err(Box::new(gds_error::gds_err(&format!(
                 "struc named {} has already existed in lib",
-                struc.borrow().name
+                struc.read().unwrap().name
             ))));
         }
         let from_nodeidx = self
@@ -196,7 +181,7 @@ impl Lib {
             if self.graph.find_edge(from_nodeidx, nodeidx).is_none() {
                 edge_id = Some(self.graph.add_edge(from_nodeidx, nodeidx, ()));
             }
-            for r in &struc.borrow().refs {
+            for r in &struc.read().unwrap().refs {
                 if let Err(e) = self.add_referd_struc(struc.clone(), r.refed_struc.clone()) {
                     if let Some(edge_idx) = edge_id {
                         self.graph.remove_edge(edge_idx);
@@ -208,12 +193,12 @@ impl Lib {
             let nodeidx = self.graph.add_node(struc.clone());
             self.uniq_struct.insert(UniqStruct {
                 graph_idx: nodeidx,
-                struct_name: struc.borrow().name.clone(),
+                struct_name: struc.read().unwrap().name.clone(),
                 struct_address: HashStrucAddr::new(&struc),
             });
             self.graph.add_edge(from_nodeidx, nodeidx, ());
 
-            for r in &struc.borrow().refs {
+            for r in &struc.read().unwrap().refs {
                 if let Err(e) = self.add_referd_struc(struc.clone(), r.refed_struc.clone()) {
                     if let Some(uniq_struct) = self.uniq_struct.remove_by_graph_idx(&nodeidx) {
                         // remove node will remove all edges with node
@@ -230,7 +215,7 @@ impl Lib {
 
     /// Remove Struc from Library, won't remove refered strucs
     ///  
-    pub fn remove_struc(&mut self, struc: &Rc<RefCell<Struc>>) {
+    pub fn remove_struc(&mut self, struc: &Arc<RwLock<Struc>>) {
         if let Some(uniq_struc) = self
             .uniq_struct
             .remove_by_struct_address(&HashStrucAddr::new(&struc))
@@ -239,8 +224,8 @@ impl Lib {
         }
     }
 
-    fn diff_struct_has_same_name(&self, struc: &Rc<RefCell<Struc>>) -> bool {
-        if let Some(same_name_struc) = self.uniq_struct.get_by_struct_name(&struc.borrow().name) {
+    fn diff_struct_has_same_name(&self, struc: &Arc<RwLock<Struc>>) -> bool {
+        if let Some(same_name_struc) = self.uniq_struct.get_by_struct_name(&struc.read().unwrap().name) {
             if same_name_struc.struct_address != HashStrucAddr::new(&struc) {
                 return true;
             }
@@ -249,8 +234,8 @@ impl Lib {
     }
 
     /// Get Strucs not refered by any Ref
-    pub fn top_strucs(&self) -> Vec<Rc<RefCell<Struc>>> {
-        let mut top_struc = Vec::<Rc<RefCell<Struc>>>::new();
+    pub fn top_strucs(&self) -> Vec<Arc<RwLock<Struc>>> {
+        let mut top_struc = Vec::<Arc<RwLock<Struc>>>::new();
 
         for node in self.graph.node_indices() {
             if !self
@@ -274,7 +259,7 @@ impl Lib {
     }
 
     /// Get all Strucs
-    pub fn all_strucs(&self) -> Vec<Rc<RefCell<Struc>>> {
+    pub fn all_strucs(&self) -> Vec<Arc<RwLock<Struc>>> {
         self.uniq_struct
             .iter()
             .map(|c| c.1.struct_address.0.clone())
@@ -337,7 +322,7 @@ impl GdsObject for Lib {
         // dump strucs
         for (_idx, uniq_struc) in self.uniq_struct.iter() {
             let ref_c = uniq_struc.struct_address.0.clone();
-            let struc_bytes = ref_c.borrow().to_gds(scaling)?;
+            let struc_bytes = ref_c.read().unwrap().to_gds(scaling)?;
             data.extend(struc_bytes);
         }
 
@@ -358,12 +343,12 @@ mod test_lib {
     fn test_lib_add_cross_refer_struct_error() {
         let mut lib = Lib::new("test");
         // make cross ref
-        let struc_1 = Rc::new(RefCell::new(Struc::new("test_1")));
-        let struc_2 = Rc::new(RefCell::new(Struc::new("test_2")));
+        let struc_1 = Arc::new(RwLock::new(Struc::new("test_1")));
+        let struc_2 = Arc::new(RwLock::new(Struc::new("test_2")));
         let ref_1 = Ref::new(&struc_1);
         let ref_2 = Ref::new(&struc_2);
-        struc_2.borrow_mut().refs.push(ref_1);
-        struc_1.borrow_mut().refs.push(ref_2);
+        struc_2.write().unwrap().refs.push(ref_1);
+        struc_1.write().unwrap().refs.push(ref_2);
 
         // add cross referd struct cause error, lib will be rewinded
         assert!(matches!(lib.add_struc(&struc_1), Err(_)));
@@ -373,8 +358,8 @@ mod test_lib {
     #[test]
     fn test_lib_add_same_name_diff_struct_error() {
         let mut lib = Lib::new("test");
-        let struc_1 = Rc::new(RefCell::new(Struc::new("test_1")));
-        let struc_2 = Rc::new(RefCell::new(Struc::new("test_1")));
+        let struc_1 = Arc::new(RwLock::new(Struc::new("test_1")));
+        let struc_2 = Arc::new(RwLock::new(Struc::new("test_1")));
         assert!(matches!(lib.add_struc(&struc_1), Ok(_)));
         assert!(matches!(lib.add_struc(&struc_2), Err(_)));
         assert!(lib.all_strucs().len() == 1);
@@ -383,20 +368,20 @@ mod test_lib {
     #[test]
     fn test_lib_top_struct() {
         let mut lib = Lib::new("test");
-        let struc_1 = Rc::new(RefCell::new(Struc::new("test_1")));
-        let struc_2 = Rc::new(RefCell::new(Struc::new("test_2")));
-        let struc_3 = Rc::new(RefCell::new(Struc::new("test_3")));
-        let struc_4 = Rc::new(RefCell::new(Struc::new("test_4")));
+        let struc_1 = Arc::new(RwLock::new(Struc::new("test_1")));
+        let struc_2 = Arc::new(RwLock::new(Struc::new("test_2")));
+        let struc_3 = Arc::new(RwLock::new(Struc::new("test_3")));
+        let struc_4 = Arc::new(RwLock::new(Struc::new("test_4")));
 
         // struc_1 --> struc_3
         let ref_1 = Ref::new(&struc_3);
-        struc_1.borrow_mut().refs.push(ref_1);
+        struc_1.write().unwrap().refs.push(ref_1);
         // struc_2 --> struc_3
         let ref_2 = Ref::new(&struc_3);
-        struc_2.borrow_mut().refs.push(ref_2);
+        struc_2.write().unwrap().refs.push(ref_2);
         // struc_3 --> struc_4
         let ref_3 = Ref::new(&struc_4);
-        struc_3.borrow_mut().refs.push(ref_3);
+        struc_3.write().unwrap().refs.push(ref_3);
 
         assert!(matches!(lib.add_struc(&struc_1), Ok(_)));
         assert!(matches!(lib.add_struc(&struc_2), Ok(_)));
@@ -405,8 +390,8 @@ mod test_lib {
         let top_strucs = lib.top_strucs();
         assert!(top_strucs.len() == 2);
 
-        assert!(top_strucs.iter().any(|v| Rc::ptr_eq(&v, &struc_1)));
-        assert!(top_strucs.iter().any(|v| Rc::ptr_eq(&v, &struc_2)));
+        assert!(top_strucs.iter().any(|v| Arc::ptr_eq(&v, &struc_1)));
+        assert!(top_strucs.iter().any(|v| Arc::ptr_eq(&v, &struc_2)));
 
         assert!(lib.all_strucs().len() == 4);
     }
@@ -414,10 +399,10 @@ mod test_lib {
     #[test]
     fn test_lib_remove_struc() {
         let mut lib = Lib::new("test");
-        let struc_1 = Rc::new(RefCell::new(Struc::new("test_1")));
-        let struc_2 = Rc::new(RefCell::new(Struc::new("test_2")));
+        let struc_1 = Arc::new(RwLock::new(Struc::new("test_1")));
+        let struc_2 = Arc::new(RwLock::new(Struc::new("test_2")));
         let ref_1 = Ref::new(&struc_2);
-        struc_1.borrow_mut().refs.push(ref_1);
+        struc_1.write().unwrap().refs.push(ref_1);
         assert!(matches!(lib.add_struc(&struc_1), Ok(_)));
         assert!(lib.top_strucs().len() == 1);
         assert!(lib.all_strucs().len() == 2);
@@ -425,6 +410,6 @@ mod test_lib {
         lib.remove_struc(&struc_1);
         let top_s = lib.top_strucs();
         assert!(top_s.len() == 1);
-        assert!(Rc::ptr_eq(&top_s[0], &struc_2));
+        assert!(Arc::ptr_eq(&top_s[0], &struc_2));
     }
 }

@@ -29,25 +29,25 @@ trait GdsObject {
 #[cfg(test)]
 mod test_gds_model {
     use super::*;
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::sync::RwLock;
+    use std::sync::Arc;
 
     #[test]
     fn test_lib_top_struc() {
         let mut gds_lib = Lib::new("test");
-        let struc1 = Rc::new(RefCell::new(Struc::new("cell1")));
-        let struc2 = Rc::new(RefCell::new(Struc::new("cell2")));
-        let struc3 = Rc::new(RefCell::new(Struc::new("cell3")));
+        let struc1 = Arc::new(RwLock::new(Struc::new("cell1")));
+        let struc2 = Arc::new(RwLock::new(Struc::new("cell2")));
+        let struc3 = Arc::new(RwLock::new(Struc::new("cell3")));
         let ref3 = Ref::new(&struc3);
         let ref2 = Ref::new(&struc2);
-        struc2.borrow_mut().refs.push(ref3);
-        struc1.borrow_mut().refs.push(ref2);
+        struc2.write().unwrap().refs.push(ref3);
+        struc1.write().unwrap().refs.push(ref2);
         let _ = gds_lib.add_struc(&struc1);
         let _ = gds_lib.add_struc(&struc2);
         let _ = gds_lib.add_struc(&struc3);
 
         let top_struc = gds_lib.top_strucs();
         assert_eq!(top_struc.len(), 1);
-        assert!(Rc::ptr_eq(&top_struc[0], &struc1));
+        assert!(Arc::ptr_eq(&top_struc[0], &struc1));
     }
 }
