@@ -1,15 +1,14 @@
-use crate::gds_err;
+use super::gds_err;
 
 use super::gds_error::*;
 use super::gds_model;
 use super::gds_model::*;
 use super::gds_record::*;
+use super::singleton_threadpool::*;
 use std::collections::HashMap;
 use std::slice::Iter;
 use std::error::Error;
-use threadpool;
 use std::sync::{Arc,RwLock, mpsc::channel};
-use num_cpus;
 
 pub fn parse_gds(records: Arc<RwLock<Vec<Record>>>) -> Result<Box<Lib>, Box<dyn Error>> {
     // first record should be gds header with version info
@@ -96,13 +95,12 @@ fn parse_lib(records: Arc<RwLock<Vec<Record>>>) -> Result<Box<Lib>, Box<dyn Erro
     }
 
     // parse all structure in multi thread 
-    let pool = threadpool::ThreadPool::new(num_cpus::get());
     let (tx, rx) = channel();
     for i in 0..strucs_id_range.len() {
         let (start, end) = strucs_id_range[i];
         let v = Arc::clone(&records);
         let tx = tx.clone();
-        pool.execute(move || {
+        get_thread_pool().read().unwrap().execute(move || {
             let v = v.read().unwrap();
             let mut iter = v[start.unwrap() as usize..end.unwrap() as usize].iter();
             let res = parse_struc( &mut iter, factor);
@@ -110,7 +108,6 @@ fn parse_lib(records: Arc<RwLock<Vec<Record>>>) -> Result<Box<Lib>, Box<dyn Erro
         })
     }
 
-    pool.join();
     drop(tx);
 
     // step.1 parse all stuc, save to name_stuc_map

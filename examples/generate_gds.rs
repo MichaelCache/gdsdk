@@ -1,7 +1,7 @@
 use gdsdk::gds_model::*;
 use std::error::Error;
 use std::io::Write;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut lib = Lib::new("TestLib");

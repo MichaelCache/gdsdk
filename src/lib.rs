@@ -10,6 +10,7 @@ mod gds_parser;
 mod gds_reader;
 mod gds_record;
 mod gds_writer;
+mod singleton_threadpool;
 
 use std::error::Error;
 use std::fs::read;
