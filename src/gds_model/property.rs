@@ -1,5 +1,4 @@
 use super::*;
-use crate::gds_error;
 use crate::gds_record;
 use crate::gds_writer;
 
@@ -16,7 +15,7 @@ impl GdsObject for Property {
             data.extend(6_i16.to_be_bytes());
             data.extend(gds_record::PROPATTR);
             if *prop.0 < 1 || *prop.0 > 126 {
-                return Err(Box::new(gds_error::gds_err(&format!(
+                return Err(Box::new(gds_err!(&format!(
                     "Gds property attribute value can not be out of range [1:126]:{:#?}",
                     &self
                 ))));
@@ -30,7 +29,7 @@ impl GdsObject for Property {
                 value.push(0);
             }
             if value.len() > 128 {
-                return Err(Box::new(gds_error::gds_err(&format!(
+                return Err(Box::new(gds_err!(&format!(
                     "Gds property value can not have ascii char more than 128 count:{:#?}",
                     &self
                 ))));

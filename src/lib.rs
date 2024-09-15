@@ -4,6 +4,7 @@
 //!
 //! Or create gds object and export to file
 
+#[macro_use]
 pub mod gds_error;
 pub mod gds_model;
 mod gds_parser;
@@ -24,8 +25,8 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
     let buff = read(gds_file)?;
     let byte_len = buff.len();
     if byte_len < 4usize {
-        return Result::Err(Box::new(gds_error::gds_err(
-            "not valid gds file, file size less than 4 byte",
+        return Result::Err(Box::new(gds_err!(
+            "not valid gds file, file size less than 4 byte"
         )));
     }
 
@@ -33,8 +34,8 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
     if let gds_record::HEADER = &buff[2..4] {
         // do nothing
     } else {
-        return Result::Err(Box::new(gds_error::gds_err(
-            "not valid gds file, no valid gds header section found",
+        return Result::Err(Box::new(gds_err!(
+            "not valid gds file, no valid gds header section found"
         )));
     }
 
@@ -47,7 +48,7 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
         record_len = u16::from_be_bytes(match buff[idx..idx + 2].try_into() {
             Ok(v) => v,
             Err(err) => {
-                return Result::Err(Box::new(gds_error::gds_err(&format!(
+                return Result::Err(Box::new(gds_err!(&format!(
                     "transfer gds record failed at {:#08x}:{:#08x}: {}",
                     idx,
                     idx + 2,
@@ -57,7 +58,7 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
         }) as usize;
 
         if record_len == 0 {
-            return Result::Err(Box::new(gds_error::gds_err(&format!(
+            return Result::Err(Box::new(gds_err!(&format!(
                 "not valid gds record length at {:#08x}:{:#08x}: zero length",
                 idx,
                 idx + 2
@@ -67,7 +68,7 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
         match gds_reader::record_type(&buff[idx..idx + record_len]) {
             Ok(r) => records.write().unwrap().push(r),
             Err(err) => {
-                return Err(Box::new(gds_error::gds_err(&format!(
+                return Err(Box::new(gds_err!(&format!(
                     "parse error at byte offset range {:#08x}:{:#08x}: {}",
                     idx,
                     idx + record_len,
@@ -85,8 +86,8 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
     }
 
     if records.read().unwrap().len() == 0 {
-        return Result::Err(Box::new(gds_error::gds_err(
-            "not valid gds file, no any valid records found",
+        return Result::Err(Box::new(gds_err!(
+            "not valid gds file, no any valid records found"
         )));
     }
 

@@ -1,14 +1,12 @@
 use std::error::Error;
-
-use super::gds_error;
 use super::gds_model;
 use super::gds_record;
 
 fn two_byte_int(byte: &[u8]) -> Result<Vec<i16>, Box<dyn Error>> {
     let byte_len = byte.len();
     if byte_len % 2 != 0 {
-        return Err(Box::new(gds_error::gds_err(
-            "transfer two byte int failed: byte length % 2 != 0",
+        return Err(Box::new(gds_err!(
+            "transfer two byte int failed: byte length % 2 != 0"
         )));
     }
     let mut value: Vec<i16> = Vec::new();
@@ -21,8 +19,8 @@ fn two_byte_int(byte: &[u8]) -> Result<Vec<i16>, Box<dyn Error>> {
 fn four_byte_int(byte: &[u8]) -> Result<Vec<i32>, Box<dyn Error>> {
     let byte_len = byte.len();
     if byte_len % 4 != 0 {
-        return Err(Box::new(gds_error::gds_err(
-            "transfer four byte int failed: byte length % 4 != 0",
+        return Err(Box::new(gds_err!(
+            "transfer four byte int failed: byte length % 4 != 0"
         )));
     }
     let mut value: Vec<i32> = Vec::new();
@@ -46,8 +44,8 @@ fn four_byte_int(byte: &[u8]) -> Result<Vec<i32>, Box<dyn Error>> {
 /// and value = (-1)^S*2^(E as u32 -1023)*(1+M as u64/2^52)
 pub(crate) fn gdsii_eight_byte_real(byte: &[u8]) -> Result<f64, Box<dyn Error>> {
     if byte.len() != 8 {
-        return Err(Box::new(gds_error::gds_err(
-            "transfer eight byte real failed: byte length != 8",
+        return Err(Box::new(gds_err!(
+            "transfer eight byte real failed: byte length != 8"
         )));
     }
     // 0x7F is 0b0111_1111, get all E bit, convert to i32
@@ -66,8 +64,8 @@ pub(crate) fn gdsii_eight_byte_real(byte: &[u8]) -> Result<f64, Box<dyn Error>> 
 fn eight_byte_real(byte: &[u8]) -> Result<Vec<f64>, Box<dyn Error>> {
     let byte_len = byte.len();
     if byte_len % 8 != 0 {
-        return Err(Box::new(gds_error::gds_err(
-            "transfer eight byte real failed: byte length % 8 != 0",
+        return Err(Box::new(gds_err!(
+            "transfer eight byte real failed: byte length % 8 != 0"
         )));
     }
     let mut value: Vec<f64> = Vec::new();
@@ -87,7 +85,7 @@ fn ascii_string(byte: &[u8]) -> Result<String, Box<dyn Error>> {
     if s.is_ascii() {
         Ok(s)
     } else {
-        Err(Box::new(gds_error::gds_err(&format!(
+        Err(Box::new(gds_err!(&format!(
             "{} contains char not in ascii charset",
             s
         ))))
@@ -96,9 +94,7 @@ fn ascii_string(byte: &[u8]) -> Result<String, Box<dyn Error>> {
 
 pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
     if bytes.len() < 4 {
-        return Err(Box::new(gds_error::gds_err(
-            "gds record length less than 4 bytes",
-        )));
+        return Err(Box::new(gds_err!("gds record length less than 4 bytes")));
     }
     let record = &bytes[2..4];
     let data = &bytes[4..];
@@ -200,7 +196,7 @@ pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
                 } else if font_tag == 0b0011_0000 {
                     gds_record::PresentationFont::Fonts3
                 } else {
-                    return Err(Box::new(gds_error::gds_err("Unknown font type")));
+                    return Err(Box::new(gds_err!("Unknown font type")));
                 },
                 vertival_justfication: if ver_tag == 0b0000_0000 {
                     gds_record::PresentationVerticalPos::Top
@@ -209,7 +205,7 @@ pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
                 } else if ver_tag == 0b0000_1000 {
                     gds_record::PresentationVerticalPos::Bottom
                 } else {
-                    return Err(Box::new(gds_error::gds_err("Unknown vertical type")));
+                    return Err(Box::new(gds_err!("Unknown vertical type")));
                 },
                 horizontal_justfication: if hor_tag == 0b0000_0000 {
                     gds_record::PresentationHorizontalPos::Left
@@ -218,7 +214,7 @@ pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
                 } else if hor_tag == 0b0000_0010 {
                     gds_record::PresentationHorizontalPos::Right
                 } else {
-                    return Err(Box::new(gds_error::gds_err("Unknown horizontal type")));
+                    return Err(Box::new(gds_err!("Unknown horizontal type")));
                 },
             })
         }
@@ -226,7 +222,7 @@ pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
         gds_record::STRING => {
             let s = ascii_string(data)?;
             if s.len() > 512 {
-                return Err(Box::new(gds_error::gds_err("Lib string exceed 512 chars")));
+                return Err(Box::new(gds_err!("Lib string exceed 512 chars")));
             }
             Ok(gds_record::Record::String(s))
         }
@@ -264,9 +260,9 @@ pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
         gds_record::PROPVALUE => {
             let s = ascii_string(data)?;
             if s.len() > 126 {
-                return Err(Box::new(gds_error::gds_err(
-                    "Property value record exceed 126 chars",
-                )));
+                return Err(Box::new(
+                    gds_err!("Property value record exceed 126 chars"),
+                ));
             }
             Ok(gds_record::Record::PropValue(s))
         }
@@ -298,7 +294,7 @@ pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
         // USERCONSTRAINT => Record::USERCONSTRAINT,
         // SPACERERROR => Record::SPACERERROR,
         // CONTACT => Record::CONTACT,
-        _ => Err(Box::new(gds_error::gds_err(&format!(
+        _ => Err(Box::new(gds_err!(&format!(
             "Error: unkonw record {:#02x?}",
             bytes
         )))),

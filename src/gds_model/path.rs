@@ -25,7 +25,7 @@ impl TryFrom<&i16> for PathEndType {
             1 => Ok(PathEndType::Round),
             2 => Ok(PathEndType::SquareHalfWidth),
             4 => Ok(PathEndType::SquareExtend),
-            _ => Err(gds_error::gds_err(&format!(
+            _ => Err(gds_err!(&format!(
                 "not valid path end type value: {}",
                 value
             ))),

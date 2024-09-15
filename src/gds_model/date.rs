@@ -2,7 +2,6 @@ use chrono::{DateTime, Datelike, Timelike, Utc};
 use std::{error::Error, time::SystemTime};
 
 use super::*;
-use crate::gds_error;
 
 #[derive(Debug, Default, Clone)]
 pub struct Date {
@@ -70,8 +69,8 @@ impl Date {
 
     pub fn from_i16_array(date: &[i16]) -> Result<Date, Box<dyn Error>> {
         if date.len() < 12 {
-            return Err(Box::new(gds_error::gds_err(
-                "Can't create gds Date for data length less than 12",
+            return Err(Box::new(gds_err!(
+                "Can't create gds Date for data length less than 12"
             )));
         }
         let mut it = date.iter();
@@ -91,7 +90,6 @@ impl Date {
         })
     }
 }
-
 
 impl GdsObject for Date {
     fn to_gds(&self, _: f64) -> Result<Vec<u8>, Box<dyn Error>> {

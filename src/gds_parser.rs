@@ -1,6 +1,5 @@
 use super::gds_err;
 
-use super::gds_error::*;
 use super::gds_model;
 use super::gds_model::*;
 use super::gds_record::*;
@@ -16,17 +15,17 @@ pub fn parse_gds(records: Arc<RwLock<Vec<Record>>>) -> Result<Box<Lib>, Box<dyn 
         println!("read GDSII version: {}", ver);
     }
     else {
-        return Err(Box::new(gds_err("GDSII version not found")));
+        return Err(Box::new(gds_err!("GDSII version not found")));
     }
 
     // second record should be BgnLib, all data between BgnLib and EndLib is belong to this lib
     // which EndLib should be the last record
     if let Some(Record::BgnLib(_)) = records.read().unwrap().get(1){}
     else {
-        return Err( Box::new(gds_err("no valid gds lib found")));
+        return Err( Box::new(gds_err!("no valid gds lib found")));
     }
     if let Record::EndLib = records.read().unwrap().last().unwrap(){}else{
-        return Err( Box::new(gds_err("no valid gds lib found")));
+        return Err( Box::new(gds_err!("no valid gds lib found")));
     }
 
     // let lib_slice = &records[1..];
@@ -51,10 +50,10 @@ fn parse_lib(records: Arc<RwLock<Vec<Record>>>) -> Result<Box<Lib>, Box<dyn Erro
             } => {
                 lib.units = precision / unit_in_meter;
                 if lib.units.is_infinite() {
-                    return Err(Box::new(gds_err("Lib units is infinite")));
+                    return Err(Box::new(gds_err!("Lib units is infinite")));
                 }
                 if lib.units.is_nan() {
-                    return Err(Box::new(gds_err("Lib units is nan")));
+                    return Err(Box::new(gds_err!("Lib units is nan")));
                 }
 
                 lib.precision = *precision;
@@ -122,7 +121,7 @@ fn parse_lib(records: Arc<RwLock<Vec<Record>>>) -> Result<Box<Lib>, Box<dyn Erro
             // struc.borrow_mut().date = date.clone();
                 let struc_name = struc.read().unwrap().name.clone();
                 if name_struc_map.contains_key(&struc_name) {
-                    return Err(Box::new(gds_err(&std::format!(
+                    return Err(Box::new(gds_err!(&std::format!(
                         "Duplicated gds Structure \"{}\" found",
                         &struc_name
                     ))));
@@ -257,7 +256,7 @@ fn parse_text(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Text, Box<dyn 
                 if let Some(key) = cur_prokey{
                     text.property.0.insert(key, value.to_string());   
                 }else{
-                    return Err(Box::new(gds_err(&std::format!(
+                    return Err(Box::new(gds_err!(&std::format!(
                         "Text Property value \"{}\" have no key",
                         &value))));
                 }
@@ -290,7 +289,7 @@ fn parse_polygon(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Polygon, Bo
                 if let Some(key) = cur_prokey{
                     polygon.property.0.insert(key, value.to_string());   
                 }else{
-                    return Err(Box::new(gds_err(&std::format!(
+                    return Err(Box::new(gds_err!(&std::format!(
                         "Polygon Property value \"{}\" have no key",
                         &value))));
                 }
@@ -322,7 +321,7 @@ fn parse_path(iter: &mut Iter<'_, Record>, factor: f64) -> Result<Path, Box<dyn 
                 if let Some(key) = cur_prokey{
                     path.property.0.insert(key, value.to_string());   
                 }else{
-                    return Err(Box::new(gds_err(&std::format!(
+                    return Err(Box::new(gds_err!(&std::format!(
                         "Path Property value \"{}\" have no key",
                         &value))));
                 }
@@ -363,7 +362,7 @@ fn parse_sref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<FakeRef, Box<d
                 if let Some(key) = cur_prokey{
                     sref.property.0.insert(key, value.to_string());   
                 }else{
-                    return Err(Box::new(gds_err(&std::format!(
+                    return Err(Box::new(gds_err!(&std::format!(
                         "Ref Property value \"{}\" have no key",
                         &value))));
                 }
@@ -414,7 +413,7 @@ fn parse_aref(iter: &mut Iter<'_, Record>, factor: f64) -> Result<FakeRef, Box<d
                 if let Some(key) = cur_prokey{
                     aref.property.0.insert(key, value.to_string());   
                 }else{
-                    return Err(Box::new(gds_err(&std::format!(
+                    return Err(Box::new(gds_err!(&std::format!(
                         "Ref Property value \"{}\" have no key",
                         &value))));
                 }

@@ -1,5 +1,4 @@
 use super::*;
-use crate::gds_error;
 use crate::gds_record;
 
 #[derive(Default, Debug)]
@@ -31,7 +30,7 @@ impl GdsObject for Polygon {
 
         // points
         if self.points.len() > 8190 {
-            gds_error::gds_err(&format!(
+            gds_err!(&format!(
                 "Gds polygons can not have points more than 8190 count:{:#?}",
                 &self
             ));

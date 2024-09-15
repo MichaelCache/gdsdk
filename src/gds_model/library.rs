@@ -10,7 +10,6 @@ use std::hash::Hash;
 use std::sync::{Arc, RwLock};
 
 use super::*;
-use crate::gds_error;
 use crate::{gds_record, gds_writer};
 
 #[derive(Debug)]
@@ -113,7 +112,7 @@ impl Lib {
     pub fn add_struc(&mut self, struc: &Arc<RwLock<Struc>>) -> Result<(), Box<dyn Error>> {
         // different struct object may have same name, gds formt forbidd same name struct in lib
         if self.diff_struct_has_same_name(&struc) {
-            return Err(Box::new(gds_error::gds_err(&format!(
+            return Err(Box::new(gds_err!(&format!(
                 "struc named {} has already existed in lib",
                 struc.read().unwrap().name
             ))));
@@ -158,10 +157,10 @@ impl Lib {
         struc: Arc<RwLock<Struc>>,
     ) -> Result<(), Box<dyn Error>> {
         if is_cyclic_directed(&self.graph) {
-            return Err(Box::new(gds_error::gds_err(&"circle refer found")));
+            return Err(Box::new(gds_err!(&"circle refer found")));
         }
         if self.diff_struct_has_same_name(&struc) {
-            return Err(Box::new(gds_error::gds_err(&format!(
+            return Err(Box::new(gds_err!(&format!(
                 "struc named {} has already existed in lib",
                 struc.read().unwrap().name
             ))));
@@ -225,7 +224,10 @@ impl Lib {
     }
 
     fn diff_struct_has_same_name(&self, struc: &Arc<RwLock<Struc>>) -> bool {
-        if let Some(same_name_struc) = self.uniq_struct.get_by_struct_name(&struc.read().unwrap().name) {
+        if let Some(same_name_struc) = self
+            .uniq_struct
+            .get_by_struct_name(&struc.read().unwrap().name)
+        {
             if same_name_struc.struct_address != HashStrucAddr::new(&struc) {
                 return true;
             }
