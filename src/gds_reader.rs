@@ -1,6 +1,6 @@
-use std::error::Error;
 use super::gds_model;
 use super::gds_record;
+use std::error::Error;
 
 fn two_byte_int(byte: &[u8]) -> Result<Vec<i16>, Box<dyn Error>> {
     let byte_len = byte.len();
@@ -9,7 +9,7 @@ fn two_byte_int(byte: &[u8]) -> Result<Vec<i16>, Box<dyn Error>> {
             "transfer two byte int failed: byte length % 2 != 0"
         )));
     }
-    let mut value: Vec<i16> = Vec::new();
+    let mut value: Vec<i16> = Vec::with_capacity(byte_len / 2);
     for i in (0..byte_len).step_by(2) {
         value.push(i16::from_be_bytes(byte[i..i + 2].try_into()?));
     }
@@ -23,7 +23,7 @@ fn four_byte_int(byte: &[u8]) -> Result<Vec<i32>, Box<dyn Error>> {
             "transfer four byte int failed: byte length % 4 != 0"
         )));
     }
-    let mut value: Vec<i32> = Vec::new();
+    let mut value: Vec<i32> = Vec::with_capacity(byte_len / 4);
     for i in (0..byte_len).step_by(4) {
         value.push(i32::from_be_bytes(byte[i..i + 4].try_into()?));
     }
@@ -68,7 +68,7 @@ fn eight_byte_real(byte: &[u8]) -> Result<Vec<f64>, Box<dyn Error>> {
             "transfer eight byte real failed: byte length % 8 != 0"
         )));
     }
-    let mut value: Vec<f64> = Vec::new();
+    let mut value: Vec<f64> = Vec::with_capacity(byte_len / 8);
     for i in (0..byte_len).step_by(8) {
         value.push(gdsii_eight_byte_real(byte[i..i + 8].try_into()?)?);
     }
@@ -260,9 +260,7 @@ pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
         gds_record::PROPVALUE => {
             let s = ascii_string(data)?;
             if s.len() > 126 {
-                return Err(Box::new(
-                    gds_err!("Property value record exceed 126 chars"),
-                ));
+                return Err(Box::new(gds_err!("Property value record exceed 126 chars")));
             }
             Ok(gds_record::Record::PropValue(s))
         }
