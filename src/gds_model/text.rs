@@ -91,7 +91,7 @@ impl GdsObject for Text {
 
         // STRING
         let mut text_data = gds_writer::ascii_string_to_be_bytes(&self.text);
-        if !text_data.len().is_power_of_two() {
+        if text_data.len() % 2 != 0 {
             text_data.push(0);
         }
 

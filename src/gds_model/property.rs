@@ -25,7 +25,7 @@ impl GdsObject for Property {
             let mut prop_value = Vec::<u8>::new();
             prop_value.extend(gds_record::PROPVALUE);
             let mut value = gds_writer::ascii_string_to_be_bytes(&prop.1);
-            if !value.len().is_power_of_two() {
+            if value.len() % 2 != 0 {
                 value.push(0);
             }
             if value.len() > 128 {

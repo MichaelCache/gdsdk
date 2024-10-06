@@ -302,7 +302,7 @@ impl GdsObject for Lib {
         let mut lib_name = Vec::<u8>::new();
         lib_name.extend(gds_record::LIBNAME);
         let mut name = gds_writer::ascii_string_to_be_bytes(&self.name);
-        if !name.len().is_power_of_two() {
+        if name.len() % 2 != 0 {
             name.push(0);
         }
         lib_name.extend(name);

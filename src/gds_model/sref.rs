@@ -63,7 +63,7 @@ impl GdsObject for Ref {
 
         let struc = &*(self.refed_struc.read().unwrap());
         let mut name = gds_writer::ascii_string_to_be_bytes(&struc.name);
-        if !name.len().is_power_of_two() {
+        if name.len() %2 != 0{
             name.push(0);
         }
         struc_name.extend(name);

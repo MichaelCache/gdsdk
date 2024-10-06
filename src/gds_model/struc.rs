@@ -41,7 +41,7 @@ impl GdsObject for Struc {
         let mut struc_name = Vec::<u8>::new();
         struc_name.extend(gds_record::STRNAME);
         let mut name = gds_writer::ascii_string_to_be_bytes(&self.name);
-        if !name.len().is_power_of_two() {
+        if name.len() % 2 != 0 {
             name.push(0);
         }
         struc_name.extend(name);
