@@ -13,7 +13,6 @@ mod gds_record;
 mod gds_writer;
 mod singleton_threadpool;
 
-use std::collections::VecDeque;
 use std::error::Error;
 use std::fs::read;
 use std::path;
@@ -54,7 +53,8 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
     }
 
     let mut idx: usize = 0;
-    let mut record_ranges = Vec::new();
+    let record_ranges = Arc::new(RwLock::new(Vec::new()));
+    let mut write_record_ranges = record_ranges.write().unwrap();
     while idx < buff.len() {
         // each gds record first 2 byte stored record byte length
         let record_len = u16::from_be_bytes(match buff[idx..idx + 2].try_into() {
@@ -72,32 +72,33 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
                 "not valid gds record length, zero length"
             )));
         }
-        record_ranges.push((idx, idx + record_len));
+        write_record_ranges.push((idx, idx + record_len));
         idx += record_len;
     }
 
     let thread_num = get_thread_pool().read().unwrap().max_count() + 1;
-
-    let thread_record_count = record_ranges.len() / thread_num;
-
+    let record_len = write_record_ranges.len();
+    drop(write_record_ranges);
+    let thread_record_count = (record_len as f64 / thread_num as f64).ceil() as usize;
+    let work_thread_num =  (record_len as f64 / thread_record_count as f64).ceil() as usize;
     // chunk record ranges to thread
-    let mut thread_record_ranges: VecDeque<Vec<(usize, usize)>> = record_ranges
-        .chunks(thread_record_count)
-        .map(|v| v.to_vec())
-        .collect();
+    // let mut thread_record_ranges: VecDeque<Vec<(usize, usize)>> = record_ranges
+    //     .chunks(thread_record_count)
+    //     .map(|v| v.to_vec())
+    //     .collect();
 
     let gds_records: Arc<RwLock<Vec<gds_record::Record>>> = Arc::new(RwLock::new(Vec::new()));
     let shared_buff = Arc::new(RwLock::new(buff));
 
     let cur_thread_id = Arc::new(RwLock::new(-1));
-    for i in 0..thread_record_ranges.len() - 1 {
-        let thread_record_range = thread_record_ranges.pop_front().unwrap();
+    for i in 0..work_thread_num - 1 {
+        let thread_record_range = record_ranges.clone();
         let save_recodes = gds_records.clone();
         let thread_buff = shared_buff.clone();
         let thread_id = cur_thread_id.clone();
         get_thread_pool().read().unwrap().execute(move || {
             let thread_records =
-                to_gds_record(&thread_buff.read().unwrap(), &thread_record_range).unwrap();
+                to_gds_record(&thread_buff.read().unwrap(), &thread_record_range.read().unwrap()).unwrap();
             loop {
                 if *thread_id.read().unwrap() + 1 == i as i32 {
                     save_recodes.write().unwrap().extend(thread_records);
@@ -112,7 +113,7 @@ pub fn read_gdsii<T: AsRef<path::Path>>(
     // main thread will also do the last part
     let last_records = to_gds_record(
         &shared_buff.read().unwrap(),
-        &thread_record_ranges.pop_front().unwrap(),
+        &record_ranges.read().unwrap(),
     )
     .unwrap();
 

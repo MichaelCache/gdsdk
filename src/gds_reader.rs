@@ -2,7 +2,30 @@ use super::gds_model;
 use super::gds_record;
 use std::error::Error;
 
-fn two_byte_int(byte: &[u8]) -> Result<Vec<i16>, Box<dyn Error>> {
+fn two_byte_int(byte: &[u8]) -> Result<i16, Box<dyn Error>> {
+    let byte_len = byte.len();
+    if byte_len % 2 != 0 {
+        return Err(Box::new(gds_err!(
+            "transfer two byte int failed: byte length % 2 != 0"
+        )));
+    }
+    Ok(i16::from_be_bytes(byte[0..2].try_into()?))
+}
+
+fn two_byte_int_2(byte: &[u8]) -> Result<(i16, i16), Box<dyn Error>> {
+    let byte_len = byte.len();
+    if byte_len % 4 != 0 {
+        return Err(Box::new(gds_err!(
+            "transfer two byte int failed: byte length % 4 != 0"
+        )));
+    }
+    Ok((
+        i16::from_be_bytes(byte[0..2].try_into()?),
+        i16::from_be_bytes(byte[2..4].try_into()?),
+    ))
+}
+
+fn two_byte_int_array(byte: &[u8]) -> Result<Vec<i16>, Box<dyn Error>> {
     let byte_len = byte.len();
     if byte_len % 2 != 0 {
         return Err(Box::new(gds_err!(
@@ -16,18 +39,31 @@ fn two_byte_int(byte: &[u8]) -> Result<Vec<i16>, Box<dyn Error>> {
     Ok(value)
 }
 
-fn four_byte_int(byte: &[u8]) -> Result<Vec<i32>, Box<dyn Error>> {
+fn four_byte_int_xy(byte: &[u8]) -> Result<Vec<(i32, i32)>, Box<dyn Error>> {
+    let byte_len = byte.len();
+    if byte_len % 8 != 0 {
+        return Err(Box::new(gds_err!(
+            "transfer four byte int failed: byte length % 8 != 0"
+        )));
+    }
+    let mut value: Vec<(i32, i32)> = Vec::with_capacity(byte_len / 8);
+    for i in (0..byte_len).step_by(8) {
+        value.push((
+            i32::from_be_bytes(byte[i..i + 4].try_into()?),
+            i32::from_be_bytes(byte[i + 4..i + 8].try_into()?),
+        ));
+    }
+    Ok(value)
+}
+
+fn four_byte_int(byte: &[u8]) -> Result<i32, Box<dyn Error>> {
     let byte_len = byte.len();
     if byte_len % 4 != 0 {
         return Err(Box::new(gds_err!(
             "transfer four byte int failed: byte length % 4 != 0"
         )));
     }
-    let mut value: Vec<i32> = Vec::with_capacity(byte_len / 4);
-    for i in (0..byte_len).step_by(4) {
-        value.push(i32::from_be_bytes(byte[i..i + 4].try_into()?));
-    }
-    Ok(value)
+    Ok(i32::from_be_bytes(byte[0..4].try_into()?))
 }
 
 /// convert gdsii eight byte real to IEEE 754 f64
@@ -99,14 +135,11 @@ pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
     let record = &bytes[2..4];
     let data = &bytes[4..];
     match record {
-        gds_record::HEADER => {
-            let version = two_byte_int(data)?;
-            Ok(gds_record::Record::Header {
-                version: version[0],
-            })
-        }
+        gds_record::HEADER => Ok(gds_record::Record::Header {
+            version: two_byte_int(data)?,
+        }),
         gds_record::BGNLIB => {
-            let date = two_byte_int(data)?;
+            let date = two_byte_int_array(data)?;
             Ok(gds_record::Record::BgnLib(gds_model::Date::from_i16_array(
                 &date,
             )?))
@@ -126,7 +159,7 @@ pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
         }
         gds_record::ENDLIB => Ok(gds_record::Record::EndLib),
         gds_record::BGNSTR => {
-            let date = two_byte_int(data)?;
+            let date = two_byte_int_array(data)?;
             Ok(gds_record::Record::BgnStr(gds_model::Date::from_i16_array(
                 &date,
             )?))
@@ -143,29 +176,24 @@ pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
         gds_record::AREF => Ok(gds_record::Record::AryRef),
         gds_record::TEXT => Ok(gds_record::Record::Text),
         gds_record::LAYER => {
-            let layer = two_byte_int(data)?[0];
             // TODO:
             // manual require layer in range [0..255]
             // assert!(layer >= 0 && layer <= 255);
-            Ok(gds_record::Record::Layer(layer))
+            Ok(gds_record::Record::Layer(two_byte_int(data)?))
         }
         gds_record::DATATYPE => {
-            let datatype = two_byte_int(data)?[0];
             // TODO:
             // manual require datatype in range [0..255]
             // assert!(datatype >= 0 && datatype <= 255);
-            Ok(gds_record::Record::DataType(datatype))
+            Ok(gds_record::Record::DataType(two_byte_int(data)?))
         }
         gds_record::WIDTH => {
-            let width = four_byte_int(data)?[0];
+            let width = four_byte_int(data)?;
             Ok(gds_record::Record::Width(width))
         }
         gds_record::XY => {
             // let data = ;
-            let xy: Vec<(i32, i32)> = four_byte_int(data)?
-                .chunks(2)
-                .map(|p| (p[0], p[1]))
-                .collect();
+            let xy: Vec<(i32, i32)> = four_byte_int_xy(data)?;
             Ok(gds_record::Record::Points(xy))
         }
         gds_record::ENDEL => Ok(gds_record::Record::EndElem),
@@ -173,15 +201,15 @@ pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
         // follow STRNAME rule
         gds_record::SNAME => Ok(gds_record::Record::StrRefName(ascii_string(data)?)),
         gds_record::COLROW => {
-            let nums = two_byte_int(data)?;
+            let nums = two_byte_int_2(data)?;
             Ok(gds_record::Record::ColRow {
-                column: nums[0],
-                row: nums[1],
+                column: nums.0,
+                row: nums.1,
             })
         }
         // TEXTNODE => Record::TEXTNODE,
         // NODE => Record::NODE,
-        gds_record::TEXTTYPE => Ok(gds_record::Record::TextType(two_byte_int(data)?[0])),
+        gds_record::TEXTTYPE => Ok(gds_record::Record::TextType(two_byte_int(data)?)),
         gds_record::PRESENTATION => {
             let font_tag = data[1] & 0b0011_0000;
             let ver_tag = data[1] & 0b0000_1100;
@@ -240,7 +268,7 @@ pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
         // USTRING => Record::USTRING,
         // REFLIBS => Record::REFLIBS,
         // FONTS => Record::FONTS,
-        gds_record::PATHTYPE => Ok(gds_record::Record::PathType(two_byte_int(data)?[0])),
+        gds_record::PATHTYPE => Ok(gds_record::Record::PathType(two_byte_int(data)?)),
         // GENERATIONS => Record::GENERATIONS,
         // ATTRTABLE => Record::ATTRTABLE,
         // STYPTABLE => Record::STYPTABLE,
@@ -251,11 +279,10 @@ pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
         // LINKKEYS => Record::LINKKEYS,
         // NODETYPE => Record::NODETYPE,
         gds_record::PROPATTR => {
-            let v = two_byte_int(data)?[0];
             // TODO:
             // manual require number is an integer from 1 to 127. Attribute numbers 126 and 127 are reserved
             // assert!(v>=1 && v<= 127);
-            Ok(gds_record::Record::PropAttr(v))
+            Ok(gds_record::Record::PropAttr(two_byte_int(data)?))
         }
         gds_record::PROPVALUE => {
             let s = ascii_string(data)?;
@@ -265,10 +292,7 @@ pub fn record_type(bytes: &[u8]) -> Result<gds_record::Record, Box<dyn Error>> {
             Ok(gds_record::Record::PropValue(s))
         }
         gds_record::BOX => Ok(gds_record::Record::Box),
-        gds_record::BOXTYPE => {
-            let boxtype = two_byte_int(data)?[0];
-            Ok(gds_record::Record::BoxType(boxtype))
-        }
+        gds_record::BOXTYPE => Ok(gds_record::Record::BoxType(two_byte_int(data)?)),
         // PLEX => Record::PLEX,
         // BGNEXTN => Record::BGNEXTN,
         // ENDEXTN => Record::ENDEXTN,
