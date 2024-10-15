@@ -109,7 +109,7 @@ impl Lib {
     /// struc_a has a ref which refer to struc_b
     ///
     /// lib.add_struc(struc_a) will also add struc_b
-    pub fn add_struc(&mut self, struc: &Arc<RwLock<Struc>>) -> Result<(), Box<dyn Error>> {
+    pub fn add_struc(&mut self, struc: &Arc<RwLock<Struc>>) -> Result<(), Box<dyn Error+Send+Sync>> {
         // different struct object may have same name, gds formt forbidd same name struct in lib
         if self.diff_struct_has_same_name(&struc) {
             return Err(Box::new(gds_err!(&format!(
@@ -155,7 +155,7 @@ impl Lib {
         &mut self,
         from_struct: Arc<RwLock<Struc>>,
         struc: Arc<RwLock<Struc>>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error+Send+Sync>> {
         if is_cyclic_directed(&self.graph) {
             return Err(Box::new(gds_err!(&"circle refer found")));
         }
