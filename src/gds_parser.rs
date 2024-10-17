@@ -3,16 +3,16 @@ use super::gds_err;
 use super::gds_model;
 use super::gds_model::*;
 use super::gds_record::*;
-use super::singleton_threadpool::*;
+
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::slice::Iter;
 use std::error::Error;
-use std::sync::{Arc,RwLock, mpsc::channel};
+use std::sync::{Arc,RwLock};
 
-pub fn parse_gds(records: Arc<RwLock<Vec<Record>>>) -> Result<Box<Lib>, Box<dyn Error+Send+Sync>> {
+pub fn parse_gds(records: Vec<Record>) -> Result<Box<Lib>, Box<dyn Error+Send+Sync>> {
     // first record should be gds header with version info
-    let read_records = records.read().unwrap();
-    if let Some(Record::Header{version:ver}) =read_records.first() {
+    if let Some(Record::Header{version:ver}) =records.first() {
         println!("read GDSII version: {}", ver);
     }
     else {
@@ -21,27 +21,25 @@ pub fn parse_gds(records: Arc<RwLock<Vec<Record>>>) -> Result<Box<Lib>, Box<dyn 
 
     // second record should be BgnLib, all data between BgnLib and EndLib is belong to this lib
     // which EndLib should be the last record
-    if let Some(Record::BgnLib(_)) = read_records.get(1){}
+    if let Some(Record::BgnLib(_)) = records.get(1){}
     else {
         return Err( Box::new(gds_err!("no valid gds lib found")));
     }
-    if let Record::EndLib = read_records.last().unwrap(){}else{
+    if let Record::EndLib = records.last().unwrap(){}else{
         return Err( Box::new(gds_err!("no valid gds lib found")));
     }
-    drop(read_records);
     
     let lib = parse_lib(records)?;
     return Ok(lib);
     
 }
 
-fn parse_lib(records: Arc<RwLock<Vec<Record>>>) -> Result<Box<Lib>, Box<dyn Error+Send+Sync>> {
+fn parse_lib(records: Vec<Record>) -> Result<Box<Lib>, Box<dyn Error+Send+Sync>> {
     let mut lib = Box::new(Lib::new(""));
     let mut factor = 0.0;
-    let strucs_id_range = Arc::new(RwLock::new( Vec::<(Option<i64>, Option<i64>)>::new()));
-    let mut write_strucs_id_range = strucs_id_range.write().unwrap();
+    let mut strucs_id_range =Vec::<(Option<i64>, Option<i64>)>::new();
     // 
-    for (idx, rec) in records.read().unwrap().iter().enumerate() {
+    for (idx, rec) in records.iter().enumerate() {
         match rec {
             Record::BgnLib(date) => lib.date = date.clone(), //modification time of lib, and marks beginning of library
             Record::LibName(s) => lib.name = s.to_string(),
@@ -62,11 +60,11 @@ fn parse_lib(records: Arc<RwLock<Vec<Record>>>) -> Result<Box<Lib>, Box<dyn Erro
             }
             // record gds structure start and end range
             Record::BgnStr(_) => {
-                write_strucs_id_range.push((None, None));
-                write_strucs_id_range.last_mut().unwrap().0 = Some(idx as i64);
+                strucs_id_range.push((None, None));
+                strucs_id_range.last_mut().unwrap().0 = Some(idx as i64);
             }
             Record::EndStr => {  
-                write_strucs_id_range.last_mut().unwrap().1 = Some(idx as i64); 
+                strucs_id_range.last_mut().unwrap().1 = Some(idx as i64); 
             }
             Record::EndLib => {
                 break;
@@ -77,14 +75,14 @@ fn parse_lib(records: Arc<RwLock<Vec<Record>>>) -> Result<Box<Lib>, Box<dyn Erro
 
     // check gds structure range valid
     // which means: 1. all range idx is Some(i64). 2. range not overlap
-    for i in 0..write_strucs_id_range.len() {
-        let (start, end) = write_strucs_id_range[i];
+    for i in 0..strucs_id_range.len() {
+        let (start, end) = strucs_id_range[i];
         if start.is_none() || end.is_none() {
             return Err(Box::new(gds_err!("Invalid gds structure range found")));
         }
 
         if i>0 {
-             if let (Some(pre_start), Some(pre_end)) = write_strucs_id_range[i-1]{
+             if let (Some(pre_start), Some(pre_end)) = strucs_id_range[i-1]{
                 if pre_start.max(start.unwrap()) < pre_end.min(end.unwrap()) {
                     return Err(Box::new(gds_err!(
                         "Gds structure range overlap"
@@ -94,84 +92,42 @@ fn parse_lib(records: Arc<RwLock<Vec<Record>>>) -> Result<Box<Lib>, Box<dyn Erro
         }
     }
 
-    let thread_num = get_thread_pool().read().unwrap().max_count() + 1;
-    let record_len = write_strucs_id_range.len();
-    let thread_record_count = (record_len as f64 / thread_num as f64).ceil() as usize;
-    let work_thread_num = (record_len as f64 / thread_record_count as f64).ceil() as usize;
-    drop(write_strucs_id_range);
-    // parse all structure in multi thread 
-    let (tx, rx) = channel();
-    for i in 0..work_thread_num-1 {
-        let thread_ranges = strucs_id_range.clone();
-        let v = Arc::clone(&records);
-        let tx = tx.clone();
-        get_thread_pool().read().unwrap().execute(move || {
+    
+   // step.1 parse all stuc, save to name_stuc_map
+    let name_struc_map = Arc::new(RwLock::new( HashMap::<String, Arc<RwLock<Struc>>>::new()));
+    let struc_ref_strucname_map =Arc::new(RwLock::new(HashMap::<String, Vec::<gds_model::FakeRef>>::new()));
+   
 
-            let v = v.read().unwrap();
-            let ranges = thread_ranges.read().unwrap();
-            for (start, end) in &ranges[i * thread_record_count..(i + 1) * thread_record_count] {
-                let mut iter = v[start.unwrap() as usize..end.unwrap() as usize].iter();
-                let res = parse_struc( &mut iter, factor);
-            tx.send(res).unwrap();
-            }
-        })
-    }
-
-    drop(tx);
-
-    // step.1 parse all stuc, save to name_stuc_map
-    let mut name_struc_map = HashMap::new();
-    let mut struc_ref_strucname_map =HashMap::<String, Vec::<gds_model::FakeRef>>::new();
-    let read_records = records.read().unwrap();
-    for (start, end) in &strucs_id_range.read().unwrap()[(work_thread_num-1) * thread_record_count..] {
-        let mut iter = read_records [start.unwrap() as usize..end.unwrap() as usize].iter();
-                let (struc, struc_fakerefs) = parse_struc( &mut iter, factor)?;
-                let struc_name = struc.read().unwrap().name.clone();
-                if name_struc_map.contains_key(&struc_name) {
-                    return Err(Box::new(gds_err!(&std::format!(
-                        "Duplicated gds Structure \"{}\" found",
-                        &struc_name
-                    ))));
-                }
-                let struc_name_cp = struc_name.clone();
-                name_struc_map.insert(struc_name, struc);
-
-                struc_ref_strucname_map.insert(struc_name_cp, struc_fakerefs);
-    }
-
-    while let Ok(res) = rx.recv(){
-        if let Ok((struc, struc_fakerefs)) = res {
-            let struc_name = struc.read().unwrap().name.clone();
-            if name_struc_map.contains_key(&struc_name) {
-                return Err(Box::new(gds_err!(&std::format!(
-                    "Duplicated gds Structure \"{}\" found",
-                    &struc_name
-                ))));
-            }
-            let struc_name_cp = struc_name.clone();
-            name_struc_map.insert(struc_name, struc);
-
-            struc_ref_strucname_map.insert(struc_name_cp, struc_fakerefs);
-        }
-    }
+    strucs_id_range.par_iter().for_each(|(start, end)|{
+        let mut write_name_struc_map = name_struc_map.write().unwrap();
+        let mut write_struc_ref_strucname_map = struc_ref_strucname_map.write().unwrap();
+        let mut iter = records[start.unwrap() as usize..end.unwrap() as usize].iter();
+        let (struc, fack_refs) = parse_struc( &mut iter, factor).unwrap();
+        let struc_name = struc.read().unwrap().name.clone();
+        if write_name_struc_map.contains_key(&struc_name) {
+                           return;
+                        }
+        write_name_struc_map.insert(struc_name.clone(), struc);
+        write_struc_ref_strucname_map.insert(struc_name, fack_refs);
+    });
+    
 
     // step.2 connect reference to struc
-    for c in struc_ref_strucname_map {
-        let cur_struc_name = &c.0;
-        let cur_struc = name_struc_map.get(cur_struc_name).unwrap().clone();
+    let mut write_struc_ref_strucname_map = struc_ref_strucname_map.write().unwrap();
+    let read_name_struc_map = name_struc_map.read().unwrap();
+    write_struc_ref_strucname_map.par_drain().for_each(|(struc_name, fack_refs)|{
+        let cur_struc = read_name_struc_map.get(&struc_name).unwrap().clone();
         let mut mut_cur_struc = cur_struc.write().unwrap();
-        for struc_fakeref in c.1{
-            // ref refer to struc
-            let ref_struc_name = &struc_fakeref.refed_struc_name;
-            let refed_struc = name_struc_map.get(ref_struc_name).unwrap().clone();
-            let struc_ref = struc_fakeref.create_true_ref(&refed_struc);
-            // current struc add refs
+        for fack_ref in fack_refs{
+            let ref_struc = read_name_struc_map.get(&fack_ref.refed_struc_name).unwrap().clone();
+            let struc_ref = fack_ref.create_true_ref(&ref_struc);
             mut_cur_struc.refs.push(struc_ref);
         }
-    }
+    });
 
     // step.3 add all struc to lib
-    for c in name_struc_map{
+    let read_name_struc_map = name_struc_map.read().unwrap();
+    for c in read_name_struc_map.iter(){
         lib.add_struc(&c.1)?;
     }
 
