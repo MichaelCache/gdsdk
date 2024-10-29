@@ -37,7 +37,7 @@ pub fn parse_gds(records: Vec<Record>) -> Result<Box<Lib>, Box<dyn Error+Send+Sy
 fn parse_lib(records: Vec<Record>) -> Result<Box<Lib>, Box<dyn Error+Send+Sync>> {
     let mut lib = Box::new(Lib::new(""));
     let mut factor = 0.0;
-    let mut strucs_id_range =Vec::<(Option<i64>, Option<i64>)>::new();
+    let mut strucs_id_range =Vec::<(Option<usize>, Option<usize>)>::new();
     // 
     for (idx, rec) in records.iter().enumerate() {
         match rec {
@@ -61,10 +61,10 @@ fn parse_lib(records: Vec<Record>) -> Result<Box<Lib>, Box<dyn Error+Send+Sync>>
             // record gds structure start and end range
             Record::BgnStr(_) => {
                 strucs_id_range.push((None, None));
-                strucs_id_range.last_mut().unwrap().0 = Some(idx as i64);
+                strucs_id_range.last_mut().unwrap().0 = Some(idx);
             }
             Record::EndStr => {  
-                strucs_id_range.last_mut().unwrap().1 = Some(idx as i64); 
+                strucs_id_range.last_mut().unwrap().1 = Some(idx); 
             }
             Record::EndLib => {
                 break;

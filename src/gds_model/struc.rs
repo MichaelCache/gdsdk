@@ -1,3 +1,7 @@
+use std::sync::{Arc, RwLock};
+
+use rayon::prelude::*;
+
 use super::*;
 use crate::gds_record;
 use crate::gds_writer;
@@ -28,7 +32,8 @@ impl Struc {
 
 impl GdsObject for Struc {
     fn to_gds(&self, scaling: f64) -> Result<Vec<u8>, Box<dyn Error>> {
-        let mut data = Vec::<u8>::new();
+        let origin_data = Arc::new(RwLock::new(Vec::<u8>::new()));
+        let mut data = origin_data.write().unwrap();
         // bgnstr and date
         let mut structure_data = Vec::<u8>::new();
         structure_data.extend(gds_record::BGNSTR);
@@ -49,33 +54,45 @@ impl GdsObject for Struc {
         data.extend((struc_name.len() as i16 + 2_i16).to_be_bytes());
         data.extend(struc_name);
 
-        for p in &self.polygons {
-            let polygon_byte = p.to_gds(scaling)?;
-            data.extend(polygon_byte);
-        }
+        drop(data);
 
-        for p in &self.paths {
-            let path_byte = p.to_gds(scaling)?;
-            data.extend(path_byte);
-        }
+        self.polygons.par_iter().for_each(|p| {
+            origin_data
+                .write()
+                .unwrap()
+                .extend(p.to_gds(scaling).unwrap())
+        });
 
-        for r in &self.refs {
-            let ref_byte = r.to_gds(scaling)?;
-            data.extend(ref_byte);
-        }
+        self.paths.par_iter().for_each(|p| {
+            origin_data
+                .write()
+                .unwrap()
+                .extend(p.to_gds(scaling).unwrap())
+        });
 
-        for l in &self.label {
-            let ref_byte = l.to_gds(scaling)?;
-            data.extend(ref_byte);
-        }
+        self.refs.par_iter().for_each(|p| {
+            origin_data
+                .write()
+                .unwrap()
+                .extend(p.to_gds(scaling).unwrap())
+        });
 
+        self.label.par_iter().for_each(|p| {
+            origin_data
+                .write()
+                .unwrap()
+                .extend(p.to_gds(scaling).unwrap())
+        });
+
+        let mut data = origin_data.write().unwrap();
         // endstr
         let mut endstr_data = Vec::<u8>::new();
         endstr_data.extend(gds_record::ENDSTR);
 
         data.extend((endstr_data.len() as i16 + 2_i16).to_be_bytes());
         data.extend(endstr_data);
+        drop(data);
 
-        Ok(data)
+        Ok(Arc::try_unwrap(origin_data).unwrap().into_inner().unwrap())
     }
 }

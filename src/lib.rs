@@ -12,7 +12,7 @@ mod gds_reader;
 mod gds_record;
 mod gds_writer;
 
-use rayon::{prelude::*, ThreadPoolBuilder};
+use rayon::prelude::*;
 use std::error::Error;
 use std::fs::read;
 use std::path;
@@ -28,9 +28,6 @@ fn to_gds_record(
 pub fn read_gdsii<T: AsRef<path::Path>>(
     gds_file: T,
 ) -> Result<Box<gds_model::Lib>, Box<dyn Error + Sync + Send>> {
-    let _ = ThreadPoolBuilder::new()
-        .num_threads(num_cpus::get_physical())
-        .build_global();
     let buff = read(gds_file)?;
     let byte_len = buff.len();
     if byte_len < 4usize {
