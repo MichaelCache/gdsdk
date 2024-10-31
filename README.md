@@ -7,7 +7,7 @@ read/write gdsii file implemented by rust
 
 ## Features
 - [x] read gdsii file and parse to gds object(concurrent)
-- [x] write gdsii object data to gdsii file(not concurrent right now)
+- [x] write gdsii object data to gdsii file(concurrent)
 - [x] avoid circular reference of gds object
 - [x] create gdsii object like polygons from scratch
 - [ ] create/modify gdsii object like polygons by using higher level graphics algorithms
@@ -75,4 +75,26 @@ let gds_data = lib.gds_bytes()?;
 
 let mut file = std::fs::File::create("test.gds")?;
 file.write_all(&gds_data)?;
+```
+
+### Circle Reference
+add corss referenced structure to library will get a error:
+```rust
+let lib = Library::new("lib");
+
+let struc_a = Arc::new(RwLock::new(Struc::new("cell_a")));
+let struc_b = Arc::new(RwLock::new(Struc::new("cell_b")));
+let struc_c = Arc::new(RwLock::new(Struc::new("cell_c")));
+
+// struc_a refer to struc_b, struc_b refer to struc_c, struc_c refer to struc_a
+let mut struc_a_ref = Ref::new(&struc_b);
+let mut struc_b_ref = Ref::new(&struc_c);
+let mut struc_c_ref = Ref::new(&struc_a);
+
+sturc_a.write().unwrap().refs.push(struc_a_ref);
+struc_b.write().unwrap().refs.push(struc_b_ref);
+struc_c.write().unwrap().refs.push(struc_c_ref);
+
+// add struc_a will recursly add it's refs, get a error and lib will rewind to original state 
+let res = lib.add_struc(&struc_a);
 ```
